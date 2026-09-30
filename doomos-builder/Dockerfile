@@ -15,6 +15,7 @@ RUN pacman -Syu --noconfirm --noprogressbar && \
         git \
         make \
         python-docutils \
+        arch-install-scripts \
         squashfs-tools \
         dosfstools \
         libisoburn \
