@@ -46,15 +46,31 @@ jobs:
         run: |
           ./scripts/check-build-environment.sh
 
-      - name: 6. Execute Phase 0 Acceptance Tests
+      - name: 6. Execute Phase 0 Acceptance Tests (Architecture & Layout)
         run: |
           ./tests/test-phase0.sh
 
-      - name: 7. Execute Combine & Multipart Reassembly Unit Tests
+      - name: 7. Execute Phase 1 Acceptance Tests (Build Toolchain & Manifest)
+        run: |
+          ./tests/test-phase1-toolchain.sh
+
+      - name: 8. Execute Phase 2 Acceptance Tests (Kernel & Hardware Drivers)
+        run: |
+          ./tests/test-phase2-kernel.sh
+
+      - name: 9. Execute Phase 3 Acceptance Tests (Rootfs & Init Services)
+        run: |
+          ./tests/test-phase3-rootfs.sh
+
+      - name: 10. Execute Phases 4 & 5 Acceptance Tests (Initramfs & UEFI Boot)
+        run: |
+          ./tests/test-phase4-phase5-boot.sh
+
+      - name: 11. Execute Combine & Multipart Reassembly Unit Tests
         run: |
           ./tests/test-combine.sh
 
-      - name: 8. Clean Stale Build Artifacts
+      - name: 12. Clean Stale Build Artifacts
         run: |
           sudo rm -rf doomos-builder/output/* doomos-builder/work/*
           mkdir -p doomos-builder/output

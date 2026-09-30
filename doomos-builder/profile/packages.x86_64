@@ -9,6 +9,8 @@ base
 base-devel
 linux-firmware
 sof-firmware
+amd-ucode
+intel-ucode
 util-linux
 coreutils
 which
