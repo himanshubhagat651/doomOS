@@ -147,4 +147,17 @@ sha256sum "$(basename "${STANDARDIZED_ISO}")" > "doomos-plasma-x86_64.iso.sha256
 log_success "Checksum written: ${OUTPUT_DIR}/doomos-plasma-x86_64.iso.sha256"
 cat "doomos-plasma-x86_64.iso.sha256"
 
+# Split into multipart chunks (part01, part02) for GitHub Releases
+log_info "Splitting ISO into multipart chunks (part01, part02)..."
+rm -f doomos-plasma-x86_64.iso.part*
+split -b 2000m -d -a 2 "$(basename "${STANDARDIZED_ISO}")" "doomos-plasma-x86_64.iso.part"
+if [[ -f "doomos-plasma-x86_64.iso.part00" ]]; then
+    mv "doomos-plasma-x86_64.iso.part00" "doomos-plasma-x86_64.iso.part01"
+fi
+if [[ -f "doomos-plasma-x86_64.iso.part01" ]] && [[ ! -f "doomos-plasma-x86_64.iso.part02" ]]; then
+    mv "doomos-plasma-x86_64.iso.part01" "doomos-plasma-x86_64.iso.part02" 2>/dev/null || true
+fi
+log_success "Multipart chunks generated for GitHub Releases:"
+ls -lh doomos-plasma-x86_64.iso.part* || true
+
 log_banner "DOOMOS MASTER ISO BUILD COMPLETE & VERIFIED!"

@@ -72,8 +72,8 @@ rsync
 mesa
 vulkan-radeon
 vulkan-intel
-nvidia-dkms
-nvidia-utils
+# nvidia-dkms (compiled on installed systems to prevent live container OOM)
+# nvidia-utils
 xorg-xwayland
 xdg-desktop-portal-kde
 xdg-desktop-portal-gtk
@@ -123,7 +123,7 @@ lib32-gcc-libs
 lib32-mesa
 lib32-vulkan-radeon
 lib32-vulkan-intel
-lib32-nvidia-utils
+# lib32-nvidia-utils
 lib32-pipewire
 lib32-alsa-plugins
 
