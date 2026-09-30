@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=VMware Wayland Resizer
+Comment=Enables dynamic screen auto-resizing in VMware Fusion on Apple Silicon
+Exec=sh -c "sleep 2 && kscreen-doctor --outputs || true"
+Icon=preferences-desktop-display
+Terminal=false
+StartupNotify=false
+Categories=System;
+OnlyShowIn=KDE;

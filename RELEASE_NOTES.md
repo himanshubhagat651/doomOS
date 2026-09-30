@@ -1,36 +1,32 @@
-# DoomOS v1.0.0 — Production Release (KDE Plasma 6 Edition)
+# DoomOS v1.1.0 — Apple Silicon ARM64 Edition (KDE Plasma 6 VMware Edition)
 
-Welcome to the official release of **DoomOS v1.0.0**, an advanced, high-performance Arch-based Linux distribution engineered from the ground up to eliminate the real-world friction experienced by **Gamers**, **Everyday Users**, and **Developers**.
+Welcome to the official release of **DoomOS v1.1.0 (ARM64 Edition)**, an advanced, high-performance Arch Linux ARM-based distribution engineered specifically for **Apple Silicon Macs (M1/M2/M3/M4)** running **VMware Fusion 13.5+ (UEFI)**.
 
-Built with native **KDE Plasma 6 on Wayland**, dual Linux kernels (**Linux Zen** for maximum responsiveness + **Linux LTS** for bedrock stability), and first-class virtualization support for **VMware Fusion & Workstation**.
+Per explicit design mandate, this edition eliminates cross-architecture virtualization friction by compiling natively for 64-bit ARM (`aarch64`), featuring **KDE Plasma 6 on native Wayland**, the **`linux-aarch64` kernel**, **ZRAM memory compression**, **dynamic Wayland resolution auto-resizing**, and **VMware shared folders (`/mnt/hgfs`)**.
 
 ---
 
 ## 🌟 Highlights & Key Innovations
 
-### 1. 🎮 Gaming & Display Stack
-- **KDE Plasma 6 on Wayland Native:** Pure Wayland desktop environment without legacy X11 session bloat.
-- **Adaptive Sync & Low-Latency Gaming:** KWin configured with `AdaptiveSync=Always` (Variable Refresh Rate / G-Sync / FreeSync) and `AllowTearingAtFullscreen=true` for competitive esports FPS titles.
-- **Hardware HDR Detection:** Bundled `doom-game` game launcher auto-detects HDR monitors via `kscreen-doctor` and seamlessly engages `gamescope` and `gamemoderun`.
-- **Complete 32-Bit Multilib Ecosystem:** Native support for Steam, Proton, Wine, Vulkan 32-bit runtimes, and high-performance Mesa graphics.
+### 1. 🍎 Native Apple Silicon & VMware Fusion Compatibility
+- **ARM64 Native Architecture (`aarch64`):** Eliminates CPU emulation overhead. Boots natively via Apple's `Hypervisor.framework` on M1, M2, M3, and M4 Apple Silicon Macs.
+- **64-bit UEFI Firmware Boot:** Direct EFI execution via `\EFI\BOOT\BOOTAA64.EFI` and GRUB for ARM64.
+- **Zero-Config VMware Script:** Run `./test-vmware.sh` on macOS to automatically generate and launch a tuned `DoomOS.vmwarevm` bundle configured with `guestOS = "arm-other-64"` and `virtualHW.version = "21"`.
 
-### 2. 🛡️ The 6 Problem-Solving Subsystems
-1. **NVIDIA DKMS Guardian:** Automated libalpm post-transaction hook prevents unbootable black screens after kernel updates by verifying kernel module symbols before rebooting.
-2. **Btrfs Snapper Auto-Rollback:** Automated pre/post transaction snapshots via `snap-pac` integrated with `grub-btrfsd` for instant grub-menu rollbacks.
-3. **Wayland Audio Loopback Engine:** Hardware virtual meeting audio loopback sink (`DoomOS Meeting Share Sink`) allowing simultaneous desktop game audio and microphone streaming in Discord/OBS/Zoom.
-4. **Developer Performance Sysctl:** Tuned for high-concurrency developer workflows (`vm.max_map_count = 2147483642`, `fs.inotify.max_user_watches = 1048576`) and pre-configured rootless container namespaces.
-5. **Laptop Power & Deep Sleep Policy:** Dual battery management with `auto-cpufreq` and `power-profiles-daemon`, tuned for deep `s2idle/deep` ACPI states.
-6. **HDR Auto-Engagement:** Dynamic Wayland compositor HDR switching for gaming.
+### 2. 🖥️ Dynamic Display & Desktop Experience
+- **KDE Plasma 6 on Wayland Native:** Blazing-fast desktop rendered with GPU acceleration.
+- **Dynamic Wayland Window Resizer:** Integrated `vmware-wayland-resizer` listener automatically synchronizes guest display resolution when dragging the VMware Fusion window on macOS.
+- **HiDPI Fractional Scaling:** Crisp, razor-sharp rendering on Retina and Liquid Retina XDR displays.
 
-### 3. 🖥️ VMware & Virtual Machine Excellence
-- **Native `open-vm-tools`:** Out-of-the-box auto-fitting screen resolutions, host-to-guest bidirectional clipboard copy/paste, and VMware shared folders (`vmhgfs`).
-- **VMware 3D SVGA Graphics:** Full 3D hardware acceleration via `vmwgfx` DRM kernel driver and Mesa.
-- **Pre-configured VM Bundle:** Run `./test-vmware.sh` to generate an optimized `DoomOS.vmwarevm` bundle.
+### 3. 🛡️ Resource Protection & VM Integration
+- **ZRAM Dynamic RAM Compression:** Auto-configured `zram-generator` compresses swap inside RAM with zstd, preventing OOM crashes in 4GB–8GB VMs.
+- **VMware Shared Folders Automount:** Host-shared directories are automatically mounted at `/mnt/hgfs` on boot via `mnt-hgfs.mount`.
+- **Integrated `open-vm-tools`:** Bidirectional copy/paste clipboard sharing, time synchronization, and graceful shutdown.
 
 ### 4. 💾 Calamares Automated Btrfs Installer
 - Custom DoomOS slate/emerald dark-mode branding.
 - Automated creation of industry-standard Btrfs subvolumes (`@`, `@home`, `@snapshots`, `@var_log`).
-- **Dual-Boot Windows RTC Sync (`doomos-rtc`):** Detects existing Windows EFI installations and synchronizes hardware RTC clock mode, eliminating the dreaded 5.5-hour dual-boot clock discrepancy.
+- High-fidelity `unpackfs` rootfs deployment for ARM64 live media.
 
 ---
 
@@ -38,31 +34,27 @@ Built with native **KDE Plasma 6 on Wayland**, dual Linux kernels (**Linux Zen**
 
 | File | Size | Description |
 | :--- | :--- | :--- |
-| `doomos-plasma-x86_64.iso.part01` | ~2.0 GB | DoomOS Master ISO — Chunk 1 |
-| `doomos-plasma-x86_64.iso.part02` | ~1.0 GB | DoomOS Master ISO — Chunk 2 |
-| `doomos-plasma-x86_64.iso.sha256` | < 1 KB | Cryptographic SHA256 integrity checksum |
+| `doomos-plasma-aarch64.iso.part00` | ~2.0 GB | DoomOS ARM64 Master ISO — Chunk 1 |
+| `doomos-plasma-aarch64.iso.part01` | ~1.0 GB | DoomOS ARM64 Master ISO — Chunk 2 |
+| `doomos-plasma-aarch64.iso.sha256` | < 1 KB | Cryptographic SHA256 integrity checksum |
 | `combine.sh` | < 2 KB | Automated recombine and integrity verification script |
-| `test-vmware.sh` | < 3 KB | Automated VMware Fusion / Workstation VM generator |
-| `flash-usb.sh` | < 4 KB | Safe bare-metal USB flashing utility with guardrails |
+| `test-vmware.sh` | < 3 KB | Automated VMware Fusion (Apple Silicon) VM generator |
+| `scripts/flash-usb.sh` | < 4 KB | Safe bare-metal USB flashing utility with guardrails |
 | `DoomOS_Master_Specification.pdf` | 848 KB | Complete 19-page engineering specification |
 | `TESTING_GUIDE.pdf` | 316 KB | Full testing, QA audit, and deployment manual |
+| `VMWARE_GUIDE.pdf` | 318 KB | VMware setup and troubleshooting manual |
 
 ---
 
-## 🚀 Recombining the ISO & Verification
+## 🚀 Recombining the ISO & Verification on macOS
 
-Download all chunks into the same directory, then run the reassembly script:
+Download the release files into a single folder on your Mac, then run:
 
 ```bash
-# 1. Recombine part01 and part02 into doomos-plasma-x86_64.iso & verify SHA256
-chmod +x combine.sh
+# 1. Recombine part00 and part01 into doomos-plasma-aarch64.iso & verify SHA256
+chmod +x combine.sh test-vmware.sh
 ./combine.sh
 
-# 2. Launch in VMware Fusion / Workstation
-chmod +x test-vmware.sh
+# 2. Launch directly in VMware Fusion on your Mac
 ./test-vmware.sh
-
-# 3. Or flash to Bare-Metal USB
-chmod +x flash-usb.sh
-./flash-usb.sh
 ```

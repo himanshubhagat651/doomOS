@@ -53,10 +53,10 @@ else
     echo -e "${GREEN}[OK] Docker engine is active and responsive.${NC}"
 fi
 
-# 2. Build x86_64 Builder Image
-echo -e "${CYAN}[BUILD]${NC} Building x86_64 build container image (${IMAGE_NAME})..."
+# 2. Build ARM64 (aarch64) Builder Image
+echo -e "${CYAN}[BUILD]${NC} Building ARM64 build container image (${IMAGE_NAME})..."
 docker build \
-    --platform linux/amd64 \
+    --platform linux/arm64 \
     -t "${IMAGE_NAME}" \
     -f "${SCRIPT_DIR}/Dockerfile" \
     "${SCRIPT_DIR}"
@@ -66,7 +66,7 @@ echo -e "${GREEN}[OK]${NC} Image '${IMAGE_NAME}' successfully built."
 # 3. Execute Build Container with Privileged Capabilities
 echo -e "${CYAN}[RUN]${NC} Launching build engine inside privileged container..."
 docker run --rm \
-    --platform linux/amd64 \
+    --platform linux/arm64 \
     --privileged \
     --security-opt seccomp=unconfined \
     -v "${SCRIPT_DIR}":/build \

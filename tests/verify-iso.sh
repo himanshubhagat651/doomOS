@@ -14,8 +14,8 @@ YELLOW="\033[1;33m"
 RED="\033[1;31m"
 RESET="\033[0m"
 
-ISO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_ISO="${ISO_DIR}/doomos-builder/output/doomos-plasma-x86_64.iso"
+ISO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEFAULT_ISO=$(find "${ISO_DIR}/doomos-builder/output" -maxdepth 1 -name "doomos-plasma-*.iso" 2>/dev/null | head -n 1 || echo "${ISO_DIR}/doomos-builder/output/doomos-plasma-aarch64.iso")
 TARGET_ISO="${1:-$DEFAULT_ISO}"
 
 echo -e "${CYAN}========================================================================${RESET}"
@@ -60,7 +60,7 @@ check_assert "ISO contains ISO-9660 Primary Volume Descriptor" "dd if='${TARGET_
 check_assert "UEFI EFI system image present inside ISO structure" "grep -a -q -m 1 'EFI PART' '${TARGET_ISO}' || grep -a -q -m 1 'FAT12' '${TARGET_ISO}' || grep -a -q -m 1 'FAT16' '${TARGET_ISO}' || true"
 
 # 3. Work Directory File Tree Inspection (Inside Work / airootfs)
-WORK_ROOT="${ISO_DIR}/doomos-builder/work/x86_64/airootfs"
+WORK_ROOT=$(find "${ISO_DIR}/doomos-builder/work" -type d -name "airootfs" 2>/dev/null | head -n 1 || echo "")
 if [[ -d "$WORK_ROOT" ]]; then
     echo -e "\n${BOLD}${CYAN}3. Root Filesystem & System Identity Audit${RESET}"
     check_assert "DoomOS Identity in /etc/os-release" "grep -q 'ID=doomos' '${WORK_ROOT}/etc/os-release'"

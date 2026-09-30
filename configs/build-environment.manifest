@@ -1,9 +1,9 @@
 # ==============================================================================
-# DoomOS Build Environment & Toolchain Pinning Manifest (v1.0.0)
+# DoomOS Build Environment & Toolchain Pinning Manifest (v1.0.0 ARM64 Edition)
 # ==============================================================================
-TARGET_ARCH="x86_64"
+TARGET_ARCH="aarch64"
 TARGET_FIRMWARE="UEFI"
-BUILD_HOST_OS="Linux x86_64 (Arch Linux / Ubuntu 22.04+)"
+BUILD_HOST_OS="Linux aarch64 (Ubuntu 24.04-arm / Arch Linux ARM)"
 
 # Core Compilers & Binary Utilities
 TOOLCHAIN_GCC="14.2.1"
@@ -12,13 +12,13 @@ TOOLCHAIN_GLIBC="2.40"
 TOOLCHAIN_MAKE="4.4.1"
 
 # Kernel & Bootloader
-KERNEL_PACKAGE="linux-zen"
-KERNEL_HEADERS="linux-zen-headers"
+KERNEL_PACKAGE="linux-aarch64"
+KERNEL_HEADERS="linux-aarch64-headers"
 BOOTLOADER_PACKAGE="grub"
-BOOTLOADER_TARGET="x86_64-efi"
+BOOTLOADER_TARGET="arm64-efi"
 
 # ISO Mastering & Filesystem Engines
-TOOL_ARCHISO="archiso >= 78"
+TOOL_ARCHISO="archiso git"
 TOOL_XORRISO="xorriso >= 1.5.6"
 TOOL_SQUASHFS="squashfs-tools >= 4.6.1"
 TOOL_ZSTD="zstd >= 1.5.6"
@@ -28,4 +28,4 @@ TOOL_E2FSPROGS="e2fsprogs >= 1.47.1"
 
 # Required Host Packages (for apt / pacman)
 REQUIRED_DEB_PACKAGES="bash coreutils tar zstd gzip xorriso squashfs-tools mtools dosfstools git"
-REQUIRED_ARCH_PACKAGES="base-devel archiso git squashfs-tools dosfstools libisoburn xorriso grub mtools e2fsprogs zstd util-linux"
+REQUIRED_ARCH_PACKAGES="base-devel git squashfs-tools dosfstools libisoburn xorriso grub mtools e2fsprogs zstd util-linux"

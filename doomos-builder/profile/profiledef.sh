@@ -11,9 +11,8 @@ iso_application="DoomOS Live / Rescue / Install Media"
 iso_version="1.0.0"
 install_dir="doomos"
 build_modes=('iso')
-bootmodes=('bios.syslinux'
-           'uefi.grub')
-arch="x86_64"
+bootmodes=('uefi.grub')
+arch="aarch64"
 pacman_conf="pacman.conf"
 airootfs_image_type="squashfs"
 airootfs_image_tool_options=('-comp' 'zstd' '-Xcompression-level' '19' '-b' '1M')

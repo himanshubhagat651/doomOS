@@ -54,8 +54,15 @@ systemctl enable power-profiles-daemon.service || true
 systemctl enable grub-btrfsd.service || true
 systemctl enable vmtoolsd.service || true
 systemctl enable vmware-vmblock-fuse.service || true
+mkdir -p /mnt/hgfs
+systemctl enable mnt-hgfs.mount || true
 
-# 6. Clean pacman cache inside rootfs to minimize ISO squashfs footprint
+# 6. Fallback symlink for Calamares installer compatibility
+mkdir -p /run/archiso/bootmnt/arch/aarch64 /run/archiso/bootmnt/arch/x86_64
+ln -sf /run/archiso/bootmnt/doomos/aarch64/airootfs.sfs /run/archiso/bootmnt/arch/aarch64/airootfs.sfs 2>/dev/null || true
+ln -sf /run/archiso/bootmnt/doomos/x86_64/airootfs.sfs /run/archiso/bootmnt/arch/x86_64/airootfs.sfs 2>/dev/null || true
+
+# 7. Clean pacman cache inside rootfs to minimize ISO squashfs footprint
 echo "==> [DoomOS Customize] Cleaning chroot pacman cache..."
 pacman -Scc --noconfirm || true
 

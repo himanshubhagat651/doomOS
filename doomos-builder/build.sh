@@ -46,8 +46,11 @@ log_banner "DOOMOS MASTER ISO BUILD ENGINE (x86_64)"
 log_info "Verifying container architecture and privileges..."
 
 ARCH=$(uname -m)
-if [[ "${ARCH}" != "x86_64" ]]; then
-    log_error "Unsupported architecture: ${ARCH}. DoomOS requires x86_64."
+if [[ "${ARCH}" == "arm64" ]]; then
+    ARCH="aarch64"
+fi
+if [[ "${ARCH}" != "aarch64" && "${ARCH}" != "x86_64" ]]; then
+    log_error "Unsupported architecture: ${ARCH}. DoomOS requires aarch64 or x86_64."
     exit 1
 fi
 log_success "Architecture: ${ARCH}"
@@ -85,8 +88,8 @@ if [[ ! -f "${HOST_PROFILE_DIR}/profiledef.sh" ]]; then
     log_error "Missing ${HOST_PROFILE_DIR}/profiledef.sh!"
     exit 1
 fi
-if [[ ! -f "${HOST_PROFILE_DIR}/packages.x86_64" ]]; then
-    log_error "Missing ${HOST_PROFILE_DIR}/packages.x86_64!"
+if [[ ! -f "${HOST_PROFILE_DIR}/packages.${ARCH}" && ! -f "${HOST_PROFILE_DIR}/packages.aarch64" && ! -f "${HOST_PROFILE_DIR}/packages.x86_64" ]]; then
+    log_error "Missing packages manifest in ${HOST_PROFILE_DIR}!"
     exit 1
 fi
 if [[ ! -f "${HOST_PROFILE_DIR}/pacman.conf" ]]; then
@@ -121,8 +124,8 @@ if [[ -z "${GENERATED_ISO}" ]]; then
     exit 1
 fi
 
-# Standardize name symlink to doomos-plasma-x86_64.iso
-STANDARDIZED_ISO="${OUTPUT_DIR}/doomos-plasma-x86_64.iso"
+# Standardize name symlink to doomos-plasma-${ARCH}.iso
+STANDARDIZED_ISO="${OUTPUT_DIR}/doomos-plasma-${ARCH}.iso"
 if [[ "${GENERATED_ISO}" != "${STANDARDIZED_ISO}" ]]; then
     cp "${GENERATED_ISO}" "${STANDARDIZED_ISO}" || ln -sf "$(basename "${GENERATED_ISO}")" "${STANDARDIZED_ISO}"
 fi
@@ -143,17 +146,17 @@ fi
 # Generate SHA256 Checksum
 log_info "Generating SHA256 checksum..."
 cd "${OUTPUT_DIR}"
-sha256sum "$(basename "${STANDARDIZED_ISO}")" > "doomos-plasma-x86_64.iso.sha256"
-log_success "Checksum written: ${OUTPUT_DIR}/doomos-plasma-x86_64.iso.sha256"
-cat "doomos-plasma-x86_64.iso.sha256"
+sha256sum "$(basename "${STANDARDIZED_ISO}")" > "doomos-plasma-${ARCH}.iso.sha256"
+log_success "Checksum written: ${OUTPUT_DIR}/doomos-plasma-${ARCH}.iso.sha256"
+cat "doomos-plasma-${ARCH}.iso.sha256"
 
 # Split into multipart chunks (part00, part01, ...) for GitHub Releases
 log_info "Splitting ISO into standard multipart chunks (part00, part01, ...)..."
-rm -f doomos-plasma-x86_64.iso.part*
+rm -f doomos-plasma-${ARCH}.iso.part*
 PART_SIZE="${PART_SIZE:-2000M}"
-split -b "${PART_SIZE}" -d -a 2 "$(basename "${STANDARDIZED_ISO}")" "doomos-plasma-x86_64.iso.part"
+split -b "${PART_SIZE}" -d -a 2 "$(basename "${STANDARDIZED_ISO}")" "doomos-plasma-${ARCH}.iso.part"
 log_success "Multipart chunks generated:"
-ls -lh doomos-plasma-x86_64.iso.part*
+ls -lh doomos-plasma-${ARCH}.iso.part*
 
 # Generate Release Manifest
 log_info "Generating release-manifest.txt..."
@@ -163,21 +166,21 @@ cat << EOF > "${MANIFEST_FILE}"
                        DOOMOS RELEASE MANIFEST
 ========================================================================
 Version:              ${DOOMOS_VERSION:-v1.0.0}
-Target Architecture:  x86_64
+Target Architecture:  ${ARCH}
 Target Firmware:      UEFI 64-bit
-Target Virtualization:VMware Workstation / Fusion
-Kernel:               linux-zen
-Bootloader:           GRUB 2.12 (UEFI)
+Target Virtualization:VMware Fusion (Apple Silicon) / Workstation
+Kernel:               linux-${ARCH}
+Bootloader:           GRUB (UEFI ${ARCH})
 Desktop Environment:  KDE Plasma 6 (Wayland Native)
 ISO Filename:         $(basename "${STANDARDIZED_ISO}")
 ISO File Size:        ${FILE_SIZE_BYTES} bytes (${FILE_SIZE_MB} MB)
-ISO Complete SHA256:  $(awk '{print $1}' "doomos-plasma-x86_64.iso.sha256")
+ISO Complete SHA256:  $(awk '{print $1}' "doomos-plasma-${ARCH}.iso.sha256")
 Split Chunk Size:     ${PART_SIZE}
 Build Timestamp:      $(date -u +'%Y-%m-%d %H:%M:%S UTC')
-Build Host:           Linux x86_64 (Container Master Engine)
+Build Host:           Linux ${ARCH} (Container Master Engine)
 
 Multipart Chunk Verification:
-$(ls -1 doomos-plasma-x86_64.iso.part* 2>/dev/null | while read -r p; do
+$(ls -1 doomos-plasma-${ARCH}.iso.part* 2>/dev/null | while read -r p; do
     sha256sum "$p"
 done)
 ========================================================================

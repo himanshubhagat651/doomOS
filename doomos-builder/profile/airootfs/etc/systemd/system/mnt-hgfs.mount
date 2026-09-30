@@ -1,0 +1,13 @@
+[Unit]
+Description=VMware Shared Folders Mount
+ConditionVirtualization=vmware
+After=vmtoolsd.service
+
+[Mount]
+What=.host:/
+Where=/mnt/hgfs
+Type=fuse.vmhgfs-fuse
+Options=allow_other,auto_unmount
+
+[Install]
+WantedBy=multi-user.target

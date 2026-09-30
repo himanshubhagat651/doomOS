@@ -1,4 +1,4 @@
-name: Build and Release DoomOS (x86_64 UEFI VMware)
+name: Build and Release DoomOS (ARM64 Apple Silicon VMware)
 
 on:
   push:
@@ -9,17 +9,17 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release Tag (e.g. v1.0.0)'
+        description: 'Release Tag (e.g. v1.1.0)'
         required: true
-        default: 'v1.0.0'
+        default: 'v1.1.0'
 
 permissions:
   contents: write
 
 jobs:
   build-and-release:
-    name: Master Build, Verification & Release Pipeline
-    runs-on: ubuntu-latest
+    name: Master Build, Verification & Release Pipeline (ARM64)
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: 1. Checkout Repository
         uses: actions/checkout@v4
@@ -27,8 +27,8 @@ jobs:
       - name: 2. Validate Build Host Architecture
         run: |
           echo "Host Architecture: $(uname -m)"
-          if [ "$(uname -m)" != "x86_64" ]; then
-            echo "FATAL: Build host must be x86_64 Linux!"
+          if [ "$(uname -m)" != "aarch64" ] && [ "$(uname -m)" != "arm64" ]; then
+            echo "FATAL: Build host must be aarch64 Linux!"
             exit 1
           fi
 
@@ -80,20 +80,20 @@ jobs:
           sudo rm -rf doomos-builder/output/* doomos-builder/work/*
           mkdir -p doomos-builder/output
 
-      - name: 14. Build DoomOS Master ISO via Container Engine
+      - name: 14. Build DoomOS Master ARM64 ISO via Container Engine
         run: |
           cd doomos-builder
           ./run-builder.sh
 
       - name: 15. Deep ISO & Subsystem Integrity Verification
         run: |
-          ./tests/verify-iso.sh doomos-builder/output/doomos-plasma-x86_64.iso
+          ./tests/verify-iso.sh doomos-builder/output/doomos-plasma-aarch64.iso
 
       - name: 16. Validate Multipart Chunks & Release Manifest
         run: |
           cd doomos-builder/output
-          ls -la doomos-plasma-x86_64.iso.part*
-          if [ ! -f doomos-plasma-x86_64.iso.part00 ]; then
+          ls -la doomos-plasma-aarch64.iso.part*
+          if [ ! -f doomos-plasma-aarch64.iso.part00 ]; then
             echo "FATAL: part00 chunk missing!"
             exit 1
           fi
@@ -107,8 +107,8 @@ jobs:
         run: |
           echo "Testing independent client-side reconstruction via combine.sh..."
           mkdir -p /tmp/doomos-reconstruction-test
-          cp doomos-builder/output/doomos-plasma-x86_64.iso.part* /tmp/doomos-reconstruction-test/
-          cp doomos-builder/output/doomos-plasma-x86_64.iso.sha256 /tmp/doomos-reconstruction-test/
+          cp doomos-builder/output/doomos-plasma-aarch64.iso.part* /tmp/doomos-reconstruction-test/
+          cp doomos-builder/output/doomos-plasma-aarch64.iso.sha256 /tmp/doomos-reconstruction-test/
           cp scripts/combine.sh /tmp/doomos-reconstruction-test/
           (cd /tmp/doomos-reconstruction-test && ./combine.sh)
           rm -rf /tmp/doomos-reconstruction-test
@@ -122,7 +122,7 @@ jobs:
           elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
             TAG="${GITHUB_REF#refs/tags/}"
           else
-            TAG="v1.0.0"
+            TAG="v1.1.0"
           fi
           echo "TAG=${TAG}" >> $GITHUB_OUTPUT
 
@@ -130,16 +130,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.vars.outputs.TAG }}
-          name: DoomOS ${{ steps.vars.outputs.TAG }} (KDE Plasma 6 VMware Edition)
+          name: DoomOS ${{ steps.vars.outputs.TAG }} (Apple Silicon ARM64 VMware Edition)
           body_path: RELEASE_NOTES.md
           make_latest: true
           draft: false
           prerelease: false
           files: |
-            doomos-builder/output/doomos-plasma-x86_64.iso.part*
-            doomos-builder/output/doomos-plasma-x86_64.iso.sha256
+            doomos-builder/output/doomos-plasma-aarch64.iso.part*
+            doomos-builder/output/doomos-plasma-aarch64.iso.sha256
             doomos-builder/output/release-manifest.txt
             combine.sh
+            test-vmware.sh
             scripts/test-vmware.sh
             scripts/flash-usb.sh
             docs/ARCHITECTURE.md

@@ -38,12 +38,12 @@ check_cmd() {
 echo -e "\n${BOLD}${CYAN}1. Host CPU Architecture${RESET}"
 HOST_ARCH=$(uname -m)
 echo -ne "  [*] Host architecture: ${HOST_ARCH} ... "
-if [[ "$HOST_ARCH" == "x86_64" ]]; then
-    echo -e "${GREEN}COMPATIBLE${RESET}"
+if [[ "$HOST_ARCH" == "aarch64" || "$HOST_ARCH" == "arm64" ]]; then
+    echo -e "${GREEN}COMPATIBLE (Native ARM64 Host)${RESET}"
+elif [[ "$HOST_ARCH" == "x86_64" ]]; then
+    echo -e "${GREEN}COMPATIBLE (x86_64 Host)${RESET}"
 else
     echo -e "${YELLOW}CROSS-ENVIRONMENT DETECTED${RESET}"
-    echo -e "      Note: Target is x86_64. If running on ${HOST_ARCH} (e.g. macOS Apple Silicon),"
-    echo -e "      the build must run inside an x86_64 container or remote Linux CI runner."
 fi
 
 # 2. Core POSIX and Compression Tools

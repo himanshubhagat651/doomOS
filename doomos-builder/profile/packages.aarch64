@@ -1,0 +1,117 @@
+# ==============================================================================
+# DoomOS ARM64 (aarch64) Base & Core Package Manifest
+# Optimized for Apple Silicon Mac (VMware Fusion) & ARM64 UEFI Platforms
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Base Operating System & Hardware Abstraction
+# ------------------------------------------------------------------------------
+base
+base-devel
+linux-firmware
+util-linux
+coreutils
+which
+sed
+gawk
+grep
+tar
+gzip
+bzip2
+xz
+zstd
+
+# ------------------------------------------------------------------------------
+# 2. ARM64 Linux Kernel Strategy
+# ------------------------------------------------------------------------------
+linux-aarch64
+linux-aarch64-headers
+
+# ------------------------------------------------------------------------------
+# 3. Bootloader & Storage Subsystems (UEFI AArch64)
+# ------------------------------------------------------------------------------
+grub
+efibootmgr
+plymouth
+btrfs-progs
+e2fsprogs
+dosfstools
+mtools
+zram-generator
+snapper
+snap-pac
+grub-btrfs
+
+# ------------------------------------------------------------------------------
+# 4. System Core, Security & Privileges
+# ------------------------------------------------------------------------------
+systemd
+systemd-sysvcompat
+dbus
+polkit
+sudo
+shadow
+
+# ------------------------------------------------------------------------------
+# 5. Networking & Wireless Hardware Stack
+# ------------------------------------------------------------------------------
+networkmanager
+iwd
+bluez
+bluez-utils
+curl
+wget
+rsync
+
+# ------------------------------------------------------------------------------
+# 6. Wayland Graphics, Mesa Drivers & Video Acceleration (ARM64)
+# ------------------------------------------------------------------------------
+mesa
+virglrenderer
+xorg-xwayland
+xdg-desktop-portal-kde
+xdg-desktop-portal-gtk
+
+# ------------------------------------------------------------------------------
+# 7. Low-Latency Pro-Audio Stack (PipeWire)
+# ------------------------------------------------------------------------------
+pipewire
+wireplumber
+pipewire-pulse
+pipewire-alsa
+
+# ------------------------------------------------------------------------------
+# 8. Power Management
+# ------------------------------------------------------------------------------
+power-profiles-daemon
+
+# ------------------------------------------------------------------------------
+# 9. KDE Plasma 6 Desktop Suite (Native Wayland Session)
+# ------------------------------------------------------------------------------
+plasma-meta
+sddm
+sddm-kcm
+dolphin
+konsole
+kate
+plasma-systemmonitor
+
+# ------------------------------------------------------------------------------
+# 10. Developer Utilities & Terminal Enhancements
+# ------------------------------------------------------------------------------
+eza
+bat
+starship
+fastfetch
+
+# ------------------------------------------------------------------------------
+# 11. System Installer (Calamares) & Console Keyboard
+# ------------------------------------------------------------------------------
+calamares
+ckbcomp
+
+# ------------------------------------------------------------------------------
+# 12. VMware Fusion ARM64 Guest Integration
+# ------------------------------------------------------------------------------
+open-vm-tools
+gtkmm3

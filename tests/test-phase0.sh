@@ -52,16 +52,16 @@ assert "Directory '.github/workflows/' exists" "[[ -d '${REPO_ROOT}/.github/work
 # 2. Architecture Specification Freeze
 echo -e "\n${BOLD}${CYAN}2. Architecture Freeze Audit${RESET}"
 assert "Architecture document exists" "[[ -s '${REPO_ROOT}/docs/ARCHITECTURE.md' ]]"
-assert "Target architecture specified as x86_64" "grep -q 'Target Architecture:' '${REPO_ROOT}/docs/ARCHITECTURE.md' || grep -q 'x86_64' '${REPO_ROOT}/docs/ARCHITECTURE.md'"
+assert "Target architecture specified (aarch64 / x86_64)" "grep -q 'Target Architecture:' '${REPO_ROOT}/docs/ARCHITECTURE.md' || grep -q -E '(aarch64|x86_64)' '${REPO_ROOT}/docs/ARCHITECTURE.md'"
 assert "Firmware target specified as UEFI" "grep -q 'UEFI' '${REPO_ROOT}/docs/ARCHITECTURE.md'"
-assert "Kernel strategy specified (linux-zen)" "grep -q 'linux-zen' '${REPO_ROOT}/docs/ARCHITECTURE.md'"
-assert "Libc strategy specified (glibc multilib)" "grep -q 'glibc' '${REPO_ROOT}/docs/ARCHITECTURE.md'"
+assert "Kernel strategy specified (linux-aarch64 / linux-zen)" "grep -q -E '(linux-aarch64|linux-zen)' '${REPO_ROOT}/docs/ARCHITECTURE.md'"
+assert "Libc strategy specified (glibc)" "grep -q 'glibc' '${REPO_ROOT}/docs/ARCHITECTURE.md'"
 assert "Init system specified (systemd)" "grep -q 'systemd' '${REPO_ROOT}/docs/ARCHITECTURE.md'"
 assert "Live filesystem strategy specified (SquashFS + zstd-19)" "grep -q 'SquashFS' '${REPO_ROOT}/docs/ARCHITECTURE.md'"
 assert "Target filesystem specified (Btrfs subvolumes)" "grep -q 'Btrfs' '${REPO_ROOT}/docs/ARCHITECTURE.md'"
-assert "UEFI layout defined (BOOTX64.EFI)" "grep -q 'BOOTX64.EFI' '${REPO_ROOT}/docs/ARCHITECTURE.md'"
+assert "UEFI layout defined (BOOTAA64.EFI / BOOTX64.EFI)" "grep -q -E '(BOOTAA64\.EFI|BOOTX64\.EFI)' '${REPO_ROOT}/docs/ARCHITECTURE.md'"
 assert "VMware hardware profile documented" "grep -q 'VMware' '${REPO_ROOT}/docs/ARCHITECTURE.md'"
-assert "Release artifact strategy documented (multipart)" "grep -q 'Multipart' '${REPO_ROOT}/docs/ARCHITECTURE.md'"
+assert "Release artifact strategy documented (multipart)" "grep -q -i 'multipart' '${REPO_ROOT}/docs/ARCHITECTURE.md'"
 
 # 3. VMware Validation Ledger
 echo -e "\n${BOLD}${CYAN}3. VMware Validation Ledger Integrity${RESET}"
