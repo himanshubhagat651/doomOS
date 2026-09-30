@@ -45,21 +45,23 @@ jobs:
 
       - name: Split ISO into Multipart Chunks (part01, part02)
         run: |
+          sudo chown -R $USER:$USER doomos-builder/output
           cd doomos-builder/output
-          echo "Splitting ISO into 2000MB multipart chunks..."
-          split -b 2000M -d -a 2 doomos-plasma-x86_64.iso doomos-plasma-x86_64.iso.part
-          
-          # Rename 00 -> part01, 01 -> part02 for human-friendly numbering
-          if [ -f doomos-plasma-x86_64.iso.part00 ]; then
-            mv doomos-plasma-x86_64.iso.part00 doomos-plasma-x86_64.iso.part01
-          fi
-          if [ -f doomos-plasma-x86_64.iso.part01 ]; then
-            mv doomos-plasma-x86_64.iso.part01 doomos-plasma-x86_64.iso.part02
-          fi
-          
-          ls -la doomos-plasma-x86_64.iso.part*
+          echo "Generating SHA256 checksum..."
           sha256sum doomos-plasma-x86_64.iso > doomos-plasma-x86_64.iso.sha256
           cat doomos-plasma-x86_64.iso.sha256
+          
+          echo "Splitting ISO into 2000MB multipart chunks..."
+          split -b 2000M -d --numeric-suffixes=1 -a 2 doomos-plasma-x86_64.iso doomos-plasma-x86_64.iso.part
+          ls -la doomos-plasma-x86_64.iso.part*
+          
+          echo "Testing combine.sh with generated chunks..."
+          mkdir -p /tmp/test-combine
+          cp doomos-plasma-x86_64.iso.part* doomos-plasma-x86_64.iso.sha256 /tmp/test-combine/
+          cp ../../combine.sh /tmp/test-combine/
+          (cd /tmp/test-combine && bash combine.sh)
+          rm -rf /tmp/test-combine
+          echo "Reassembly verification succeeded!"
 
       - name: Determine Release Tag
         id: vars
@@ -69,7 +71,7 @@ jobs:
           elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
             TAG="${GITHUB_REF#refs/tags/}"
           else
-            TAG="v1.0.0-$(date +'%Y%m%d%H%M')"
+            TAG="v1.0.0"
           fi
           echo "TAG=${TAG}" >> $GITHUB_OUTPUT
 
@@ -79,6 +81,9 @@ jobs:
           tag_name: ${{ steps.vars.outputs.TAG }}
           name: DoomOS ${{ steps.vars.outputs.TAG }} (KDE Plasma 6 VMware Edition)
           body_path: RELEASE_NOTES.md
+          make_latest: true
+          draft: false
+          prerelease: false
           files: |
             doomos-builder/output/doomos-plasma-x86_64.iso.part01
             doomos-builder/output/doomos-plasma-x86_64.iso.part02
@@ -86,7 +91,9 @@ jobs:
             combine.sh
             DoomOS_Master_Specification.pdf
             TESTING_GUIDE.pdf
+            VMWARE_GUIDE.pdf
             test-vmware.sh
             flash-usb.sh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
