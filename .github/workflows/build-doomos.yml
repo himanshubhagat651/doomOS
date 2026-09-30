@@ -1,0 +1,130 @@
+name: Build and Release DoomOS (x86_64 UEFI VMware)
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release Tag (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Master Build, Verification & Release Pipeline
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. Validate Build Host Architecture
+        run: |
+          echo "Host Architecture: $(uname -m)"
+          if [ "$(uname -m)" != "x86_64" ]; then
+            echo "FATAL: Build host must be x86_64 Linux!"
+            exit 1
+          fi
+
+      - name: 3. Free Disk Space on Runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo docker image prune -a -f
+          df -h
+
+      - name: 4. Set Execution Permissions on Scripts & Tests
+        run: |
+          chmod +x scripts/*.sh tests/*.sh doomos-builder/*.sh combine.sh test-vmware.sh flash-usb.sh verify-iso.sh
+
+      - name: 5. Execute Build Environment Pre-flight Check
+        run: |
+          ./scripts/check-build-environment.sh
+
+      - name: 6. Execute Phase 0 Acceptance Tests
+        run: |
+          ./tests/test-phase0.sh
+
+      - name: 7. Execute Combine & Multipart Reassembly Unit Tests
+        run: |
+          ./tests/test-combine.sh
+
+      - name: 8. Clean Stale Build Artifacts
+        run: |
+          sudo rm -rf doomos-builder/output/* doomos-builder/work/*
+          mkdir -p doomos-builder/output
+
+      - name: 9. Build DoomOS Master ISO via Container Engine
+        run: |
+          cd doomos-builder
+          ./run-builder.sh
+
+      - name: 10. Deep ISO & Subsystem Integrity Verification
+        run: |
+          ./tests/verify-iso.sh doomos-builder/output/doomos-plasma-x86_64.iso
+
+      - name: 11. Validate Multipart Chunks & Release Manifest
+        run: |
+          cd doomos-builder/output
+          ls -la doomos-plasma-x86_64.iso.part*
+          if [ ! -f doomos-plasma-x86_64.iso.part00 ]; then
+            echo "FATAL: part00 chunk missing!"
+            exit 1
+          fi
+          if [ ! -f release-manifest.txt ]; then
+            echo "FATAL: release-manifest.txt missing!"
+            exit 1
+          fi
+          cat release-manifest.txt
+
+      - name: 12. Client-Side Reassembly & Cryptographic SHA256 Gate
+        run: |
+          echo "Testing independent client-side reconstruction via combine.sh..."
+          mkdir -p /tmp/doomos-reconstruction-test
+          cp doomos-builder/output/doomos-plasma-x86_64.iso.part* /tmp/doomos-reconstruction-test/
+          cp doomos-builder/output/doomos-plasma-x86_64.iso.sha256 /tmp/doomos-reconstruction-test/
+          cp scripts/combine.sh /tmp/doomos-reconstruction-test/
+          (cd /tmp/doomos-reconstruction-test && ./combine.sh)
+          rm -rf /tmp/doomos-reconstruction-test
+          echo "Reconstruction and SHA256 cryptographic match certified."
+
+      - name: 13. Determine Release Tag
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.release_tag }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            TAG="v1.0.0"
+          fi
+          echo "TAG=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: 14. Publish Certified Release to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.TAG }}
+          name: DoomOS ${{ steps.vars.outputs.TAG }} (KDE Plasma 6 VMware Edition)
+          body_path: RELEASE_NOTES.md
+          make_latest: true
+          draft: false
+          prerelease: false
+          files: |
+            doomos-builder/output/doomos-plasma-x86_64.iso.part*
+            doomos-builder/output/doomos-plasma-x86_64.iso.sha256
+            doomos-builder/output/release-manifest.txt
+            combine.sh
+            scripts/test-vmware.sh
+            scripts/flash-usb.sh
+            docs/ARCHITECTURE.md
+            docs/VMWARE-VALIDATION.md
+            DoomOS_Master_Specification.pdf
+            TESTING_GUIDE.pdf
+            VMWARE_GUIDE.pdf
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

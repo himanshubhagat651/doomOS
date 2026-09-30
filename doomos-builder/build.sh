@@ -147,17 +147,46 @@ sha256sum "$(basename "${STANDARDIZED_ISO}")" > "doomos-plasma-x86_64.iso.sha256
 log_success "Checksum written: ${OUTPUT_DIR}/doomos-plasma-x86_64.iso.sha256"
 cat "doomos-plasma-x86_64.iso.sha256"
 
-# Split into multipart chunks (part01, part02) for GitHub Releases
-log_info "Splitting ISO into multipart chunks (part01, part02)..."
+# Split into multipart chunks (part00, part01, ...) for GitHub Releases
+log_info "Splitting ISO into standard multipart chunks (part00, part01, ...)..."
 rm -f doomos-plasma-x86_64.iso.part*
-split -b 2000m -d -a 2 "$(basename "${STANDARDIZED_ISO}")" "doomos-plasma-x86_64.iso.part"
-if [[ -f "doomos-plasma-x86_64.iso.part00" ]]; then
-    mv "doomos-plasma-x86_64.iso.part00" "doomos-plasma-x86_64.iso.part01"
-fi
-if [[ -f "doomos-plasma-x86_64.iso.part01" ]] && [[ ! -f "doomos-plasma-x86_64.iso.part02" ]]; then
-    mv "doomos-plasma-x86_64.iso.part01" "doomos-plasma-x86_64.iso.part02" 2>/dev/null || true
-fi
-log_success "Multipart chunks generated for GitHub Releases:"
-ls -lh doomos-plasma-x86_64.iso.part* || true
+PART_SIZE="${PART_SIZE:-2000M}"
+split -b "${PART_SIZE}" -d -a 2 "$(basename "${STANDARDIZED_ISO}")" "doomos-plasma-x86_64.iso.part"
+log_success "Multipart chunks generated:"
+ls -lh doomos-plasma-x86_64.iso.part*
+
+# Generate Release Manifest
+log_info "Generating release-manifest.txt..."
+MANIFEST_FILE="${OUTPUT_DIR}/release-manifest.txt"
+cat << EOF > "${MANIFEST_FILE}"
+========================================================================
+                       DOOMOS RELEASE MANIFEST
+========================================================================
+Version:              ${DOOMOS_VERSION:-v1.0.0}
+Target Architecture:  x86_64
+Target Firmware:      UEFI 64-bit
+Target Virtualization:VMware Workstation / Fusion
+Kernel:               linux-zen
+Bootloader:           GRUB 2.12 (UEFI)
+Desktop Environment:  KDE Plasma 6 (Wayland Native)
+ISO Filename:         $(basename "${STANDARDIZED_ISO}")
+ISO File Size:        ${FILE_SIZE_BYTES} bytes (${FILE_SIZE_MB} MB)
+ISO Complete SHA256:  $(awk '{print $1}' "doomos-plasma-x86_64.iso.sha256")
+Split Chunk Size:     ${PART_SIZE}
+Build Timestamp:      $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+Build Host:           Linux x86_64 (Container Master Engine)
+
+Multipart Chunk Verification:
+$(ls -1 doomos-plasma-x86_64.iso.part* 2>/dev/null | while read -r p; do
+    sha256sum "$p"
+done)
+========================================================================
+EOF
+log_success "Release manifest created: ${MANIFEST_FILE}"
+cat "${MANIFEST_FILE}"
+
+# Ensure output files are accessible by non-root host runner
+chmod -R a+rwX "${OUTPUT_DIR}"
 
 log_banner "DOOMOS MASTER ISO BUILD COMPLETE & VERIFIED!"
+
