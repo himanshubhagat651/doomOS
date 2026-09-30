@@ -1,0 +1,57 @@
+name: Build and Release DoomOS ISO
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release Tag (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-iso:
+    name: Build & Publish Bootable ISO
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Maximize Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo docker image prune -a -f
+          df -h
+
+      - name: Set up QEMU and Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build DoomOS Hybrid ISO Container
+        run: |
+          chmod +x doomos-builder/build.sh doomos-builder/run-builder.sh
+          cd doomos-builder
+          ./run-builder.sh
+
+      - name: Verify ISO Integrity
+        run: |
+          chmod +x verify-iso.sh
+          ./verify-iso.sh
+
+      - name: Publish Release to GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
+          name: DoomOS ${{ github.event.inputs.release_tag || github.ref_name }} (KDE Plasma 6 Rolling)
+          body_path: RELEASE_NOTES.md
+          files: |
+            doomos-builder/output/doomos-plasma-x86_64.iso
+            doomos-builder/output/doomos-plasma-x86_64.iso.sha256
+            DoomOS_Master_Specification.pdf
+            TESTING_GUIDE.pdf
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

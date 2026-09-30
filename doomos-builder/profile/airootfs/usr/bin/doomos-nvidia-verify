@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# DoomOS NVIDIA Driver Guardian Verifier
+# Validates that the nvidia.ko kernel module compiled cleanly post-transaction
+# ==============================================================================
+set -euo pipefail
+
+BOLD='\033[1m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+echo -e "${BOLD}DoomOS Guardian: Checking NVIDIA module integrity...${NC}"
+
+# Find all installed kernel releases in /usr/lib/modules
+INSTALLED_KERNELS=$(ls -1 /usr/lib/modules/ 2>/dev/null || true)
+
+if [[ -z "${INSTALLED_KERNELS}" ]]; then
+    echo -e "${YELLOW}[WARN] No kernel modules directory found. Skipping check.${NC}"
+    exit 0
+fi
+
+FAILURE_DETECTED=0
+
+for KVER in ${INSTALLED_KERNELS}; do
+    # Only verify for official kernels (zen and lts)
+    if [[ "${KVER}" == *"zen"* ]] || [[ "${KVER}" == *"lts"* ]] || [[ "${KVER}" == *"arch"* ]]; then
+        echo -n " -> Checking kernel ${KVER}... "
+        if modinfo -k "${KVER}" nvidia >/dev/null 2>&1; then
+            echo -e "${GREEN}[OK] nvidia.ko verified${NC}"
+        else
+            echo -e "${RED}[FAILED] nvidia.ko missing or failed to compile!${NC}"
+            FAILURE_DETECTED=1
+        fi
+    fi
+done
+
+if [[ "${FAILURE_DETECTED}" -eq 1 ]]; then
+    echo -e "${BOLD}${RED}====================================================================${NC}"
+    echo -e "${BOLD}${RED} [CRITICAL] DoomOS Guardian Alert: NVIDIA DKMS Compilation Failed!   ${NC}"
+    echo -e "${BOLD}${YELLOW} To prevent a black screen on next boot:                             ${NC}"
+    echo -e " 1. Select the fallback kernel (linux-lts) from the GRUB boot menu. "
+    echo -e " 2. Or restore the pre-update Btrfs snapshot from the GRUB menu.     "
+    echo -e "${BOLD}${RED}====================================================================${NC}"
+else
+    echo -e "${GREEN}[SUCCESS] All NVIDIA kernel modules successfully verified.${NC}"
+fi
+
+exit 0

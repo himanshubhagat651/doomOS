@@ -1,0 +1,58 @@
+/* ==============================================================================
+   DoomOS Calamares Custom Qt Stylesheet
+   Modern dark theme matching KDE Plasma Breeze/Doom aesthetic
+   ============================================================================== */
+
+QWidget {
+    background-color: #0f172a;
+    color: #f8fafc;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    font-size: 13px;
+}
+
+QDialog {
+    background-color: #0f172a;
+}
+
+QPushButton {
+    background-color: #0284c7;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 18px;
+    font-weight: 600;
+}
+
+QPushButton:hover {
+    background-color: #0369a1;
+}
+
+QPushButton:pressed {
+    background-color: #075985;
+}
+
+QPushButton:disabled {
+    background-color: #334155;
+    color: #94a3b8;
+}
+
+QTreeView, QListView, QTableView {
+    background-color: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    selection-background-color: #0284c7;
+    selection-color: #ffffff;
+}
+
+QProgressBar {
+    background-color: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    height: 10px;
+    text-align: center;
+}
+
+QProgressBar::chunk {
+    background-color: #0284c7;
+    border-radius: 3px;
+}

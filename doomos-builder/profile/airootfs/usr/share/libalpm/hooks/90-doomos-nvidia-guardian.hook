@@ -1,0 +1,12 @@
+[Trigger]
+Operation = Upgrade
+Operation = Install
+Type = Package
+Target = nvidia-dkms
+Target = linux-zen
+Target = linux-lts
+
+[Action]
+Description = DoomOS Guardian: Verifying NVIDIA DKMS module compilation...
+When = PostTransaction
+Exec = /usr/bin/doomos-nvidia-verify

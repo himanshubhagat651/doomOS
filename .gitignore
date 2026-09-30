@@ -1,0 +1,5 @@
+doomos-builder/work/
+doomos-builder/cache/
+doomos-builder/output/*.iso
+*.vmwarevm/
+.DS_Store

@@ -1,0 +1,10 @@
+NAME="DoomOS"
+PRETTY_NAME="DoomOS Linux (KDE Plasma Edition)"
+ID=doomos
+ID_LIKE=arch
+BUILD_ID=rolling
+ANSI_COLOR="38;2;2;132;199"
+HOME_URL="https://doomos.org"
+SUPPORT_URL="https://doomos.org/support"
+BUG_REPORT_URL="https://github.com/doomos-project/doomos/issues"
+LOGO=doomos

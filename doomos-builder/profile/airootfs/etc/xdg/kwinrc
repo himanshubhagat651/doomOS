@@ -1,0 +1,5 @@
+[Wayland]
+AllowTearingAtFullscreen=true
+
+[Displays]
+AdaptiveSync=Always

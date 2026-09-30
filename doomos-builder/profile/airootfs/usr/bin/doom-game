@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# DoomOS Intelligent Gaming & HDR Launch Wrapper
+# Auto-detects display capabilities and applies low-latency VRR and HDR wrappers
+# Usage: doom-game %command% (in Steam, Lutris, Heroic, or standalone)
+# ==============================================================================
+set -euo pipefail
+
+if [[ $# -eq 0 ]]; then
+    echo "Usage: doom-game <command> [args...]"
+    echo "Example: doom-game steam"
+    exit 1
+fi
+
+HDR_SUPPORTED=0
+
+# 1. Probe display HDR capability via kscreen-doctor if in KDE Wayland
+if command -v kscreen-doctor >/dev/null 2>&1; then
+    if kscreen-doctor -o 2>/dev/null | grep -iq "HDR: supported"; then
+        HDR_SUPPORTED=1
+    fi
+fi
+
+# 2. Configure HDR Environment Variables if hardware supports BT.2020 PQ
+if [[ "${HDR_SUPPORTED}" -eq 1 ]]; then
+    export ENABLE_HDR_WSI=1
+    export PROTON_ENABLE_HDR=1
+    export DXVK_HDR=1
+    echo "[DoomOS] HDR Display detected. Enabling HDR color pipeline."
+    GAMESCOPE_HDR_FLAG="--hdr-enabled"
+else
+    GAMESCOPE_HDR_FLAG=""
+fi
+
+# 3. Apply GameMode and Gamescope if available
+if command -v gamescope >/dev/null 2>&1 && command -v gamemoderun >/dev/null 2>&1; then
+    echo "[DoomOS] Launching game via GameMode and Gamescope (Adaptive Sync enabled)..."
+    exec gamemoderun gamescope \
+        ${GAMESCOPE_HDR_FLAG} \
+        --adaptive-sync \
+        --fullscreen \
+        -- "$@"
+elif command -v gamemoderun >/dev/null 2>&1; then
+    echo "[DoomOS] Launching game via GameMode..."
+    exec gamemoderun "$@"
+else
+    echo "[DoomOS] Launching game directly..."
+    exec "$@"
+fi

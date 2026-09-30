@@ -1,0 +1,8 @@
+# ==============================================================================
+# DoomOS RTC Sync Calamares Module Descriptor
+# ==============================================================================
+---
+type: "job"
+name: "doomos-rtc"
+interface: "python"
+script: "main.py"

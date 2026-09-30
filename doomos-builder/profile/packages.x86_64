@@ -1,0 +1,141 @@
+# ==============================================================================
+# DoomOS Base & Core Package Manifest (x86_64)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Base Operating System & Hardware Abstraction
+# ------------------------------------------------------------------------------
+base
+base-devel
+linux-firmware
+sof-firmware
+util-linux
+coreutils
+which
+sed
+gawk
+grep
+tar
+gzip
+bzip2
+xz
+zstd
+
+# ------------------------------------------------------------------------------
+# 2. Dual-Kernel Strategy (Performance Zen + LTS Fallback)
+# ------------------------------------------------------------------------------
+linux-zen
+linux-zen-headers
+linux-lts
+linux-lts-headers
+
+# ------------------------------------------------------------------------------
+# 3. Bootloader, Boot Splash & Storage Subsystems
+# ------------------------------------------------------------------------------
+grub
+syslinux
+efibootmgr
+plymouth
+btrfs-progs
+e2fsprogs
+dosfstools
+mtools
+zram-generator
+snapper
+snap-pac
+grub-btrfs
+
+# ------------------------------------------------------------------------------
+# 4. System Core, Security & Privileges
+# ------------------------------------------------------------------------------
+systemd
+systemd-sysvcompat
+dbus
+polkit
+sudo
+shadow
+
+# ------------------------------------------------------------------------------
+# 5. Networking & Wireless Hardware Stack
+# ------------------------------------------------------------------------------
+networkmanager
+iwd
+bluez
+bluez-utils
+curl
+wget
+rsync
+
+# ------------------------------------------------------------------------------
+# 6. Graphics Acceleration & Wayland Driver Stack
+# ------------------------------------------------------------------------------
+mesa
+vulkan-radeon
+vulkan-intel
+nvidia-dkms
+nvidia-utils
+xorg-xwayland
+xdg-desktop-portal-kde
+xdg-desktop-portal-gtk
+
+# ------------------------------------------------------------------------------
+# 7. Low-Latency Audio Subsystems (PipeWire + WirePlumber)
+# ------------------------------------------------------------------------------
+pipewire
+wireplumber
+pipewire-pulse
+pipewire-alsa
+pipewire-jack
+
+# ------------------------------------------------------------------------------
+# 8. Power Management & Laptop Battery Optimization
+# ------------------------------------------------------------------------------
+auto-cpufreq
+power-profiles-daemon
+
+# ------------------------------------------------------------------------------
+# 9. Gaming Acceleration & HDR Infrastructure
+# ------------------------------------------------------------------------------
+gamescope
+gamemode
+lib32-gamemode
+
+# ------------------------------------------------------------------------------
+# 10. KDE Plasma 6 Desktop Environment & Core Suite
+# ------------------------------------------------------------------------------
+plasma-meta
+sddm
+sddm-kcm
+dolphin
+konsole
+kate
+plasma-systemmonitor
+eza
+bat
+starship
+fastfetch
+
+# ------------------------------------------------------------------------------
+# 11. 32-Bit Multi-lib Compatibility Suite (Gaming, Steam & Wine)
+# ------------------------------------------------------------------------------
+lib32-glibc
+lib32-gcc-libs
+lib32-mesa
+lib32-vulkan-radeon
+lib32-vulkan-intel
+lib32-nvidia-utils
+lib32-pipewire
+lib32-alsa-plugins
+
+# ------------------------------------------------------------------------------
+# 12. Graphical System Installer & Partitioning Tools
+# ------------------------------------------------------------------------------
+calamares
+ckbcomp
+
+# ------------------------------------------------------------------------------
+# 13. Virtualization & VMware Guest Acceleration Suite
+# ------------------------------------------------------------------------------
+open-vm-tools
+gtkmm3
+

@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# DoomOS airootfs Customization Script
+# Executed by mkarchiso inside the chroot environment after pacstrap
+# ==============================================================================
+
+set -euo pipefail
+
+echo "==> [DoomOS Customize] Initializing live filesystem configurations..."
+
+# 1. Apply Calamares Configurations & Custom Branding
+if [[ -d "/root/calamares-overlay/etc/calamares" ]]; then
+    echo "==> [DoomOS Customize] Deploying Calamares installer configuration and branding..."
+    mkdir -p /etc/calamares/modules /etc/calamares/branding
+    cp -rf /root/calamares-overlay/etc/calamares/* /etc/calamares/
+    rm -rf /root/calamares-overlay
+fi
+
+# 2. Permissions on Executables
+echo "==> [DoomOS Customize] Setting execution bits on DoomOS tools and hooks..."
+chmod -f +x /usr/bin/doom-game || true
+chmod -f +x /usr/bin/doomos-nvidia-verify || true
+if [[ -f "/etc/calamares/modules/doomos-rtc/main.py" ]]; then
+    chmod +x /etc/calamares/modules/doomos-rtc/main.py
+fi
+
+# 3. Create Live User & Configure Passwordless Sudo
+echo "==> [DoomOS Customize] Setting up default 'liveuser' for SDDM autologin..."
+if ! id "liveuser" >/dev/null 2>&1; then
+    useradd -m -u 1000 -G wheel,audio,video,storage,optical,network,power -s /bin/bash liveuser
+    passwd -d liveuser
+fi
+
+# Configure sudoers
+mkdir -p /etc/sudoers.d
+echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/10-wheel
+echo "liveuser ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/20-liveuser
+chmod 0440 /etc/sudoers.d/*
+
+# 4. Configure Locales & Timezone
+echo "==> [DoomOS Customize] Generating UTF-8 locales..."
+ln -sf /usr/share/zoneinfo/UTC /etc/localtime
+sed -i 's/^#\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen || true
+echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
+locale-gen || true
+echo "LANG=en_US.UTF-8" > /etc/locale.conf
+
+# 5. Enable System Services
+echo "==> [DoomOS Customize] Enabling core systemd services..."
+systemctl enable sddm.service || true
+systemctl enable NetworkManager.service || true
+systemctl enable bluetooth.service || true
+systemctl enable power-profiles-daemon.service || true
+systemctl enable grub-btrfsd.service || true
+systemctl enable vmtoolsd.service || true
+systemctl enable vmware-vmblock-fuse.service || true
+
+# 6. Clean pacman cache inside rootfs to minimize ISO squashfs footprint
+echo "==> [DoomOS Customize] Cleaning chroot pacman cache..."
+pacman -Scc --noconfirm || true
+
+echo "==> [DoomOS Customize] Customization completed successfully."
