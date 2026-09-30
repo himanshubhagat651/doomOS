@@ -42,49 +42,54 @@ jobs:
         run: |
           chmod +x scripts/*.sh tests/*.sh doomos-builder/*.sh combine.sh test-vmware.sh flash-usb.sh verify-iso.sh
 
-      - name: 5. Execute Build Environment Pre-flight Check
+      - name: 5. Install Pinned Host Build Dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends xorriso mtools
+
+      - name: 6. Execute Build Environment Pre-flight Check
         run: |
           ./scripts/check-build-environment.sh
 
-      - name: 6. Execute Phase 0 Acceptance Tests (Architecture & Layout)
+      - name: 7. Execute Phase 0 Acceptance Tests (Architecture & Layout)
         run: |
           ./tests/test-phase0.sh
 
-      - name: 7. Execute Phase 1 Acceptance Tests (Build Toolchain & Manifest)
+      - name: 8. Execute Phase 1 Acceptance Tests (Build Toolchain & Manifest)
         run: |
           ./tests/test-phase1-toolchain.sh
 
-      - name: 8. Execute Phase 2 Acceptance Tests (Kernel & Hardware Drivers)
+      - name: 9. Execute Phase 2 Acceptance Tests (Kernel & Hardware Drivers)
         run: |
           ./tests/test-phase2-kernel.sh
 
-      - name: 9. Execute Phase 3 Acceptance Tests (Rootfs & Init Services)
+      - name: 10. Execute Phase 3 Acceptance Tests (Rootfs & Init Services)
         run: |
           ./tests/test-phase3-rootfs.sh
 
-      - name: 10. Execute Phases 4 & 5 Acceptance Tests (Initramfs & UEFI Boot)
+      - name: 11. Execute Phases 4 & 5 Acceptance Tests (Initramfs & UEFI Boot)
         run: |
           ./tests/test-phase4-phase5-boot.sh
 
-      - name: 11. Execute Combine & Multipart Reassembly Unit Tests
+      - name: 12. Execute Combine & Multipart Reassembly Unit Tests
         run: |
           ./tests/test-combine.sh
 
-      - name: 12. Clean Stale Build Artifacts
+      - name: 13. Clean Stale Build Artifacts
         run: |
           sudo rm -rf doomos-builder/output/* doomos-builder/work/*
           mkdir -p doomos-builder/output
 
-      - name: 9. Build DoomOS Master ISO via Container Engine
+      - name: 14. Build DoomOS Master ISO via Container Engine
         run: |
           cd doomos-builder
           ./run-builder.sh
 
-      - name: 10. Deep ISO & Subsystem Integrity Verification
+      - name: 15. Deep ISO & Subsystem Integrity Verification
         run: |
           ./tests/verify-iso.sh doomos-builder/output/doomos-plasma-x86_64.iso
 
-      - name: 11. Validate Multipart Chunks & Release Manifest
+      - name: 16. Validate Multipart Chunks & Release Manifest
         run: |
           cd doomos-builder/output
           ls -la doomos-plasma-x86_64.iso.part*
@@ -98,7 +103,7 @@ jobs:
           fi
           cat release-manifest.txt
 
-      - name: 12. Client-Side Reassembly & Cryptographic SHA256 Gate
+      - name: 17. Client-Side Reassembly & Cryptographic SHA256 Gate
         run: |
           echo "Testing independent client-side reconstruction via combine.sh..."
           mkdir -p /tmp/doomos-reconstruction-test
@@ -109,7 +114,7 @@ jobs:
           rm -rf /tmp/doomos-reconstruction-test
           echo "Reconstruction and SHA256 cryptographic match certified."
 
-      - name: 13. Determine Release Tag
+      - name: 18. Determine Release Tag
         id: vars
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -121,7 +126,7 @@ jobs:
           fi
           echo "TAG=${TAG}" >> $GITHUB_OUTPUT
 
-      - name: 14. Publish Certified Release to GitHub Releases
+      - name: 19. Publish Certified Release to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.vars.outputs.TAG }}
