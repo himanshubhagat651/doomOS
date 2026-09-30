@@ -34,23 +34,35 @@ Built with native **KDE Plasma 6 on Wayland**, dual Linux kernels (**Linux Zen**
 
 ---
 
-## 📦 Release Artifacts
+## 📦 Release Artifacts (Multipart & Reassembly)
 
-| File | Description |
-| :--- | :--- |
-| `doomos-plasma-x86_64.iso` | Bootable Hybrid UEFI/BIOS ISO image |
-| `doomos-plasma-x86_64.iso.sha256` | SHA256 integrity checksum |
-| `DoomOS_Master_Specification.pdf` | Complete 19-page engineering specification |
-| `TESTING_GUIDE.pdf` | Full testing and QA deployment manual |
+| File | Size | Description |
+| :--- | :--- | :--- |
+| `doomos-plasma-x86_64.iso.part01` | ~2.0 GB | DoomOS Master ISO — Chunk 1 |
+| `doomos-plasma-x86_64.iso.part02` | ~1.0 GB | DoomOS Master ISO — Chunk 2 |
+| `doomos-plasma-x86_64.iso.sha256` | < 1 KB | Cryptographic SHA256 integrity checksum |
+| `combine.sh` | < 2 KB | Automated recombine and integrity verification script |
+| `test-vmware.sh` | < 3 KB | Automated VMware Fusion / Workstation VM generator |
+| `flash-usb.sh` | < 4 KB | Safe bare-metal USB flashing utility with guardrails |
+| `DoomOS_Master_Specification.pdf` | 848 KB | Complete 19-page engineering specification |
+| `TESTING_GUIDE.pdf` | 316 KB | Full testing, QA audit, and deployment manual |
 
 ---
 
-## 🚀 Quick Verification & Booting
+## 🚀 Recombining the ISO & Verification
+
+Download all chunks into the same directory, then run the reassembly script:
 
 ```bash
-# Verify checksum
-sha256sum -c doomos-plasma-x86_64.iso.sha256
+# 1. Recombine part01 and part02 into doomos-plasma-x86_64.iso & verify SHA256
+chmod +x combine.sh
+./combine.sh
 
-# Flash to USB on Linux/macOS
-sudo dd if=doomos-plasma-x86_64.iso of=/dev/sdX bs=4M status=progress oflag=sync
+# 2. Launch in VMware Fusion / Workstation
+chmod +x test-vmware.sh
+./test-vmware.sh
+
+# 3. Or flash to Bare-Metal USB
+chmod +x flash-usb.sh
+./flash-usb.sh
 ```

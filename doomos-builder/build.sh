@@ -75,28 +75,30 @@ fi
 # 2. Workspace Directory Setup
 # ------------------------------------------------------------------------------
 BUILD_ROOT="/build"
-PROFILE_DIR="${BUILD_ROOT}/profile"
+HOST_PROFILE_DIR="${BUILD_ROOT}/profile"
 OUTPUT_DIR="${BUILD_ROOT}/output"
-WORK_DIR="${BUILD_ROOT}/work"
+WORK_DIR="/root/work"
+PROFILE_DIR="/root/profile"
 
 log_info "Validating build profile..."
-if [[ ! -f "${PROFILE_DIR}/profiledef.sh" ]]; then
-    log_error "Missing ${PROFILE_DIR}/profiledef.sh!"
+if [[ ! -f "${HOST_PROFILE_DIR}/profiledef.sh" ]]; then
+    log_error "Missing ${HOST_PROFILE_DIR}/profiledef.sh!"
     exit 1
 fi
-if [[ ! -f "${PROFILE_DIR}/packages.x86_64" ]]; then
-    log_error "Missing ${PROFILE_DIR}/packages.x86_64!"
+if [[ ! -f "${HOST_PROFILE_DIR}/packages.x86_64" ]]; then
+    log_error "Missing ${HOST_PROFILE_DIR}/packages.x86_64!"
     exit 1
 fi
-if [[ ! -f "${PROFILE_DIR}/pacman.conf" ]]; then
-    log_error "Missing ${PROFILE_DIR}/pacman.conf!"
+if [[ ! -f "${HOST_PROFILE_DIR}/pacman.conf" ]]; then
+    log_error "Missing ${HOST_PROFILE_DIR}/pacman.conf!"
     exit 1
 fi
 
 mkdir -p "${OUTPUT_DIR}"
-rm -rf "${WORK_DIR}"
+rm -rf "${WORK_DIR}" "${PROFILE_DIR}"
 mkdir -p "${WORK_DIR}"
-log_success "Profile and output paths validated."
+cp -a "${HOST_PROFILE_DIR}" "${PROFILE_DIR}"
+log_success "Profile copied to container overlayfs and output paths validated."
 
 # ------------------------------------------------------------------------------
 # 3. ISO Mastering via mkarchiso

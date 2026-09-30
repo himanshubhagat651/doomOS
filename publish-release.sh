@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# DoomOS GitHub Release Publisher
-# Automates Git tagging, repository publishing, and uploading ISO assets to GitHub Releases
+# DoomOS GitHub Release Publisher (Multipart ISO Chunks)
+# Automates Git tagging, splitting ISO into part01/part02, and publishing to GitHub Releases
 # ==============================================================================
 
 set -euo pipefail
@@ -15,13 +15,14 @@ RESET="\033[0m"
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TAG="${1:-v1.0.0}"
-TITLE="DoomOS ${TAG} (KDE Plasma 6 Rolling)"
+TITLE="DoomOS ${TAG} (KDE Plasma 6 VMware Edition)"
 NOTES_FILE="${PROJECT_ROOT}/RELEASE_NOTES.md"
-ISO_FILE="${PROJECT_ROOT}/doomos-builder/output/doomos-plasma-x86_64.iso"
-SHA_FILE="${PROJECT_ROOT}/doomos-builder/output/doomos-plasma-x86_64.iso.sha256"
+OUTPUT_DIR="${PROJECT_ROOT}/doomos-builder/output"
+ISO_FILE="${OUTPUT_DIR}/doomos-plasma-x86_64.iso"
+SHA_FILE="${OUTPUT_DIR}/doomos-plasma-x86_64.iso.sha256"
 
 echo -e "${CYAN}========================================================================${RESET}"
-echo -e "${BOLD}${GREEN}   DOOMOS GITHUB RELEASES AUTOMATION                                    ${RESET}"
+echo -e "${BOLD}${GREEN}   DOOMOS GITHUB RELEASES PUBLISHER (MULTIPART & SHA256)                ${RESET}"
 echo -e "${CYAN}========================================================================${RESET}"
 
 # 1. Verify GitHub CLI Authentication
@@ -38,61 +39,47 @@ if ! gh auth status >/dev/null 2>&1; then
 fi
 echo -e "${GREEN}[OK] GitHub CLI is authenticated.${RESET}"
 
-# 2. Verify Release Assets
-if [[ ! -f "$ISO_FILE" ]]; then
-    echo -e "${RED}[ERROR] Release ISO not found at: ${ISO_FILE}${RESET}"
-    echo -e "Please run the build pipeline first ('./doomos-builder/run-builder.sh')."
-    exit 1
+# 2. Check if ISO exists; if present, generate multipart chunks
+ASSETS=()
+
+if [[ -f "$ISO_FILE" ]]; then
+    echo -e "${GREEN}[OK] Master ISO located:${RESET} ${ISO_FILE} ($(du -h "$ISO_FILE" | awk '{print $1}'))"
+    
+    # Generate SHA256
+    echo -e "${CYAN}[*] Generating SHA256 checksum...${RESET}"
+    (cd "$OUTPUT_DIR" && if command -v sha256sum >/dev/null 2>&1; then sha256sum "$(basename "$ISO_FILE")" > "$(basename "$SHA_FILE")"; else shasum -a 256 "$(basename "$ISO_FILE")" > "$(basename "$SHA_FILE")"; fi)
+    echo -e "${GREEN}[OK] Checksum created:${RESET} ${SHA_FILE}"
+
+    # Split into 2000M parts (part01, part02)
+    echo -e "${CYAN}[*] Splitting ISO into 2000MB multipart chunks (part01, part02)...${RESET}"
+    (
+        cd "$OUTPUT_DIR"
+        rm -f doomos-plasma-x86_64.iso.part*
+        split -b 2000m -d -a 2 "$(basename "$ISO_FILE")" "doomos-plasma-x86_64.iso.part"
+        if [[ -f "doomos-plasma-x86_64.iso.part00" ]]; then
+            mv "doomos-plasma-x86_64.iso.part00" "doomos-plasma-x86_64.iso.part01"
+        fi
+        if [[ -f "doomos-plasma-x86_64.iso.part01" ]] && [[ ! -f "doomos-plasma-x86_64.iso.part02" ]]; then
+            mv "doomos-plasma-x86_64.iso.part01" "doomos-plasma-x86_64.iso.part02" 2>/dev/null || true
+        fi
+    )
+
+    for p in "${OUTPUT_DIR}"/doomos-plasma-x86_64.iso.part*; do
+        if [[ -f "$p" ]]; then
+            ASSETS+=("$p")
+            echo -e "    - Prepared chunk: $(basename "$p") ($(du -h "$p" | awk '{print $1}'))"
+        fi
+    done
+    ASSETS+=("$SHA_FILE")
 fi
 
-if [[ ! -f "$SHA_FILE" ]]; then
-    echo -e "${YELLOW}[*] Generating missing SHA256 checksum...${RESET}"
-    (cd "$(dirname "$ISO_FILE")" && sha256sum "$(basename "$ISO_FILE")" > "$(basename "$SHA_FILE")")
-fi
-echo -e "${GREEN}[OK] ISO and SHA256 checksum confirmed.${RESET}"
-
-# 3. Ensure Git Repository & Remote Configuration
-cd "$PROJECT_ROOT"
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    echo -e "${CYAN}[*] Initializing local git repository...${RESET}"
-    git init
-fi
-
-# Configure .gitignore to avoid committing huge work directories
-cat << 'EOF' > .gitignore
-doomos-builder/work/
-doomos-builder/cache/
-*.vmwarevm/
-.DS_Store
-EOF
-
-git add .gitignore *.md *.sh *.pdf doomos-builder/Dockerfile doomos-builder/build.sh doomos-builder/run-builder.sh doomos-builder/profile/ .github/ 2>/dev/null || true
-git commit -m "chore(release): prepare DoomOS ${TAG} release assets and build engine" 2>/dev/null || true
-
-# Check if remote origin exists
-if ! git remote get-url origin >/dev/null 2>&1; then
-    echo -e "${YELLOW}[!] Git remote 'origin' is not set.${RESET}"
-    echo -e "${CYAN}[*] Creating remote repository on GitHub under current authenticated account...${RESET}"
-    gh repo create DoomOS --public --source=. --remote=origin --push || {
-        echo -e "${YELLOW}[!] Repo may already exist. Attempting to add remote...${RESET}"
-        USER_NAME=$(gh api user -q .login)
-        git remote add origin "https://github.com/${USER_NAME}/DoomOS.git" || true
-        git push -u origin HEAD || true
-    }
-else
-    echo -e "${CYAN}[*] Pushing latest commits to origin...${RESET}"
-    git push -u origin HEAD || true
-fi
-
-# 4. Create GitHub Release & Upload Assets
-echo -e "${CYAN}[*] Publishing release ${TAG} to GitHub Releases...${RESET}"
-
-ASSETS=(
-    "$ISO_FILE"
-    "$SHA_FILE"
+# Always attach helper tools and documentation
+ASSETS+=(
+    "${PROJECT_ROOT}/combine.sh"
+    "${PROJECT_ROOT}/test-vmware.sh"
+    "${PROJECT_ROOT}/flash-usb.sh"
 )
 
-# Attach PDF manuals if available
 if [[ -f "${PROJECT_ROOT}/DoomOS_Master_Specification.pdf" ]]; then
     ASSETS+=("${PROJECT_ROOT}/DoomOS_Master_Specification.pdf")
 fi
@@ -100,12 +87,25 @@ if [[ -f "${PROJECT_ROOT}/TESTING_GUIDE.pdf" ]]; then
     ASSETS+=("${PROJECT_ROOT}/TESTING_GUIDE.pdf")
 fi
 
-gh release create "${TAG}" "${ASSETS[@]}" \
-    --title "${TITLE}" \
-    --notes-file "${NOTES_FILE}" \
-    --verify-tag
+# 3. Commit and Push to Remote
+cd "$PROJECT_ROOT"
+git add .
+git commit -m "chore(release): configure GitHub Actions multipart release pipeline and combine.sh" || true
 
-echo -e "\n${BOLD}${GREEN}========================================================================${RESET}"
-echo -e "${BOLD}${GREEN}   DOOMOS ${TAG} SUCCESSFULLY PUBLISHED TO GITHUB RELEASES!                ${RESET}"
-echo -e "${BOLD}${GREEN}========================================================================${RESET}"
-gh release view "${TAG}" --web || gh release view "${TAG}"
+echo -e "\n${CYAN}[*] Target remote repository: $(git remote get-url origin 2>/dev/null || echo 'Not configured')${RESET}"
+echo -e "${CYAN}[*] Pushing code to origin...${RESET}"
+git push -u origin main || {
+    echo -e "${YELLOW}[!] If push failed due to permissions or missing repo, please create 'doomOS' at https://github.com/new and run 'git push -u origin main'.${RESET}"
+}
+
+# 4. Create GitHub Release if assets exist
+if [[ ${#ASSETS[@]} -gt 3 ]] && [[ -f "$ISO_FILE" ]]; then
+    echo -e "\n${CYAN}[*] Creating GitHub Release ${TAG} with multipart assets...${RESET}"
+    gh release create "${TAG}" "${ASSETS[@]}" \
+        --title "${TITLE}" \
+        --notes-file "${NOTES_FILE}" \
+        --verify-tag
+    echo -e "${GREEN}${BOLD}[SUCCESS] Release published to GitHub!${RESET}"
+else
+    echo -e "\n${CYAN}[INFO] Code pushed to GitHub. The GitHub Actions workflow will automatically build and publish the multipart ISO release!${RESET}"
+fi
