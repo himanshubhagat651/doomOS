@@ -26,6 +26,7 @@ RUN pacman -Syu --noconfirm --noprogressbar && \
         zstd \
         util-linux && \
     git clone --depth=1 https://gitlab.archlinux.org/archlinux/archiso.git /tmp/archiso && \
+    find /tmp/archiso -type f -name "mkarchiso" -exec sed -i 's/at_keyboard //g' {} + && \
     cd /tmp/archiso && make install PREFIX=/usr && cd / && rm -rf /tmp/archiso && \
     pacman -Scc --noconfirm
 
