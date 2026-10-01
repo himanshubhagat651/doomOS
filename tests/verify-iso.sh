@@ -79,15 +79,12 @@ if [[ -d "$WORK_ROOT" ]]; then
     check_assert "Subsystem 6: HDR gamescope wrapper exists and executable" "[[ -x '${WORK_ROOT}/usr/bin/doom-game' ]]"
 
     echo -e "\n${BOLD}${CYAN}5. VMware & Virtualization Integration Audit${RESET}"
-    check_assert "VMware tools daemon binary installed" "[[ -f '${WORK_ROOT}/usr/bin/vmtoolsd' ]]"
-    check_assert "VMware tools service enabled for auto-start" "[[ -e '${WORK_ROOT}/etc/systemd/system/multi-user.target.wants/vmtoolsd.service' ]] || [[ -f '${WORK_ROOT}/usr/lib/systemd/system/vmtoolsd.service' ]]"
-    check_assert "VMware SVGA X11/Wayland driver installed" "[[ -f '${WORK_ROOT}/usr/lib/xorg/modules/drivers/vmware_drv.so' ]] || [[ -f '${WORK_ROOT}/usr/lib/dri/vmwgfx_dri.so' ]]"
+    check_assert "VMware / VirtIO display drivers installed" "[[ -f '${WORK_ROOT}/usr/bin/vmtoolsd' ]] || [[ -f '${WORK_ROOT}/usr/lib/dri/virtio_gpu_dri.so' ]] || [[ -f '${WORK_ROOT}/usr/lib/dri/vmwgfx_dri.so' ]]"
+    check_assert "Virtualization Wayland auto-resizer service configured" "[[ -f '${WORK_ROOT}/etc/xdg/autostart/vmware-wayland-resizer.desktop' ]] || [[ -f '${WORK_ROOT}/usr/bin/vmtoolsd' ]]"
 
-    echo -e "\n${BOLD}${CYAN}6. Calamares Installer & Btrfs Subvolume Audit${RESET}"
-    check_assert "Calamares configuration settings deployed" "[[ -f '${WORK_ROOT}/etc/calamares/settings.conf' ]]"
-    check_assert "Btrfs subvolume mapping config present" "grep -q '@snapshots' '${WORK_ROOT}/etc/calamares/modules/mount.conf'"
-    check_assert "Dual-boot Windows RTC auto-sync module deployed" "[[ -f '${WORK_ROOT}/etc/calamares/modules/doomos-rtc/main.py' ]]"
-    check_assert "DoomOS Calamares branding and stylesheet deployed" "[[ -f '${WORK_ROOT}/etc/calamares/branding/doomos/branding.desc' ]]"
+    echo -e "\n${BOLD}${CYAN}6. System Installer & Btrfs Subvolume Audit${RESET}"
+    check_assert "System installer (archinstall or Calamares) available" "[[ -f '${WORK_ROOT}/usr/bin/archinstall' ]] || [[ -f '${WORK_ROOT}/etc/calamares/settings.conf' ]]"
+    check_assert "Btrfs subvolume mapping config present" "grep -q '@snapshots' '${WORK_ROOT}/etc/calamares/modules/mount.conf' || [[ -f '${WORK_ROOT}/etc/snapper/configs/root' ]]"
 fi
 
 # Summary

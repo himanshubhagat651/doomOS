@@ -105,13 +105,12 @@ starship
 fastfetch
 
 # ------------------------------------------------------------------------------
-# 11. System Installer (Calamares) & Console Keyboard
+# 11. System Installer (Archinstall) & Console Keyboard
 # ------------------------------------------------------------------------------
-calamares
+archinstall
 ckbcomp
 
 # ------------------------------------------------------------------------------
-# 12. VMware Fusion ARM64 Guest Integration
+# 12. VMware Fusion & ARM64 Guest Integration
 # ------------------------------------------------------------------------------
-open-vm-tools
 gtkmm3
