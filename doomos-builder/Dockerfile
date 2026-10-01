@@ -9,11 +9,14 @@ LABEL description="Isolated aarch64 reproducible build environment for DoomOS IS
 # 1. Disable Pacman seccomp sandbox and signature checks inside container build
 RUN sed -i '/\[options\]/a DisableSandbox\nSigLevel = Never' /etc/pacman.conf
 
+COPY patch-mkarchiso.py /tmp/patch-mkarchiso.py
+
 # 2. Update pacman and install ISO mastering toolchain
 RUN pacman -Syu --noconfirm --noprogressbar && \
     pacman -S --noconfirm --needed --noprogressbar \
         git \
         make \
+        python \
         python-docutils \
         arch-install-scripts \
         squashfs-tools \
@@ -25,9 +28,10 @@ RUN pacman -Syu --noconfirm --noprogressbar && \
         e2fsprogs \
         zstd \
         util-linux && \
+    mkdir -p /usr/share/grub && touch /usr/share/grub/sbat.csv && \
     git clone --depth=1 https://gitlab.archlinux.org/archlinux/archiso.git /tmp/archiso && \
-    find /tmp/archiso -type f -name "mkarchiso" -exec sed -i 's/at_keyboard //g' {} + && \
-    cd /tmp/archiso && make install PREFIX=/usr && cd / && rm -rf /tmp/archiso && \
+    python3 /tmp/patch-mkarchiso.py /tmp/archiso/archiso/mkarchiso && \
+    cd /tmp/archiso && make install PREFIX=/usr && cd / && rm -rf /tmp/archiso /tmp/patch-mkarchiso.py && \
     pacman -Scc --noconfirm
 
 # Set up build workspace
