@@ -63,10 +63,8 @@ ln -sf /run/archiso/bootmnt/doomos/aarch64/airootfs.sfs /run/archiso/bootmnt/arc
 ln -sf /run/archiso/bootmnt/doomos/x86_64/airootfs.sfs /run/archiso/bootmnt/arch/x86_64/airootfs.sfs 2>/dev/null || true
 
 # 7. Normalize ARM64 kernel & initramfs names for mkarchiso ISO mastering
-echo "==> [DoomOS Customize] Normalizing kernel and initramfs artifacts in /boot..."
-if [[ ! -f /boot/initramfs-linux.img && ! -f /boot/initramfs-linux-aarch64.img ]]; then
-    mkinitcpio -P || true
-fi
+echo "==> [DoomOS Customize] Regenerating live initramfs with archiso hooks..."
+mkinitcpio -P || true
 if [[ -f /boot/Image ]]; then
     cp -a /boot/Image /boot/vmlinuz-linux-aarch64
     cp -a /boot/Image /boot/vmlinuz-linux
