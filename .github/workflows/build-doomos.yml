@@ -141,7 +141,6 @@ jobs:
             doomos-builder/output/release-manifest.txt
             combine.sh
             test-vmware.sh
-            scripts/test-vmware.sh
             scripts/flash-usb.sh
             docs/ARCHITECTURE.md
             docs/VMWARE-VALIDATION.md
