@@ -15,29 +15,27 @@ Features:
 
 import os
 import sys
+from typing import Any, Dict, List
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
-# Import detection engine
+# Robust Import of detection engine
 try:
     from doomos_hardware_detect import HardwareDetector, generate_text_summary, HardwareStatus
-except ImportError:
-    # If running directly from path
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    try:
-        from doomos_hardware_detect import HardwareDetector, generate_text_summary, HardwareStatus
-    except ImportError:
-        # Fallback inline loader
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "doomos_hardware_detect",
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "doomos-hardware-detect")
-        )
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        HardwareDetector = mod.HardwareDetector
-        generate_text_summary = mod.generate_text_summary
-        HardwareStatus = mod.HardwareStatus
+except Exception:
+    import importlib.machinery
+    import importlib.util
+    detect_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "doomos-hardware-detect")
+    if not os.path.exists(detect_path):
+        detect_path = "/usr/bin/doomos-hardware-detect"
+    
+    loader = importlib.machinery.SourceFileLoader("doomos_hardware_detect", detect_path)
+    spec = importlib.util.spec_from_loader("doomos_hardware_detect", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    HardwareDetector = mod.HardwareDetector
+    generate_text_summary = mod.generate_text_summary
+    HardwareStatus = mod.HardwareStatus
 
 
 # Theme Palette (Matches KDE Plasma Dark / DoomOS Green aesthetic)

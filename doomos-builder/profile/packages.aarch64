@@ -99,6 +99,7 @@ kate
 plasma-systemmonitor
 flatpak
 archlinux-appstream-data
+tk
 
 # ------------------------------------------------------------------------------
 # 10. Developer Utilities & Terminal Enhancements
