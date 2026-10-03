@@ -20,6 +20,8 @@ fi
 echo "==> [DoomOS Customize] Setting execution bits on DoomOS tools and hooks..."
 chmod -f +x /usr/bin/doom-game || true
 chmod -f +x /usr/bin/doomos-nvidia-verify || true
+chmod -f +x /usr/bin/doomos-hardware-detect || true
+chmod -f +x /usr/bin/doomos-hardware-center || true
 if [[ -f "/etc/calamares/modules/doomos-rtc/main.py" ]]; then
     chmod +x /etc/calamares/modules/doomos-rtc/main.py
 fi

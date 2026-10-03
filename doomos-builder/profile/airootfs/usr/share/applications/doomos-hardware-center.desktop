@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Hardware Center
+GenericName=System Hardware Center
+Comment=Inspect CPU, RAM, GPU, storage, network, audio, and connected peripherals
+Exec=/usr/bin/doomos-hardware-center
+Icon=preferences-desktop-peripherals
+Terminal=false
+Categories=System;Settings;HardwareSettings;
+Keywords=hardware;cpu;gpu;ram;memory;disk;storage;wifi;bluetooth;audio;display;monitor;usb;
+StartupNotify=true

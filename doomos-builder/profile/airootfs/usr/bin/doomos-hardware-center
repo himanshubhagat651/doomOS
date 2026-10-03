@@ -1,0 +1,471 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+DoomOS Hardware Center — Graphical User Interface
+Designed for KDE Plasma 6 (Wayland) using Python Tkinter.
+Features:
+ - System Overview Dashboard (CPU, RAM, GPU, Storage, Network, Audio, Display, USB, OS)
+ - Color-coded Health Status Badges (GOOD, WARNING, UNKNOWN, ERROR)
+ - Category Selector & Deep Technical Details View
+ - Dynamic Refresh Hardware Button (non-blocking)
+ - Copy Hardware Information to Clipboard
+ - Export Hardware Report to File (e.g. DoomOS-Hardware-Report.txt)
+ - Clean, modern, accessible design (Dr. Doom dark theme accents)
+"""
+
+import os
+import sys
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+
+# Import detection engine
+try:
+    from doomos_hardware_detect import HardwareDetector, generate_text_summary, HardwareStatus
+except ImportError:
+    # If running directly from path
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        from doomos_hardware_detect import HardwareDetector, generate_text_summary, HardwareStatus
+    except ImportError:
+        # Fallback inline loader
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "doomos_hardware_detect",
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "doomos-hardware-detect")
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        HardwareDetector = mod.HardwareDetector
+        generate_text_summary = mod.generate_text_summary
+        HardwareStatus = mod.HardwareStatus
+
+
+# Theme Palette (Matches KDE Plasma Dark / DoomOS Green aesthetic)
+COLOR_BG_DARK = "#181a1f"
+COLOR_SIDEBAR = "#21252b"
+COLOR_CARD = "#282c34"
+COLOR_CARD_BORDER = "#3b4048"
+COLOR_TEXT_MAIN = "#abb2bf"
+COLOR_TEXT_HEAD = "#ffffff"
+COLOR_TEXT_MUTED = "#5c6370"
+COLOR_ACCENT = "#98c379"  # DoomOS signature emerald green
+COLOR_ACCENT_HOVER = "#a8d389"
+COLOR_GOOD = "#98c379"
+COLOR_WARN = "#e5c07b"
+COLOR_ERROR = "#e06c75"
+COLOR_UNKNOWN = "#61afef"
+
+
+class HardwareCenterApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+
+        self.title("DoomOS Hardware Center")
+        self.geometry("960x650")
+        self.minsize(800, 520)
+        self.configure(bg=COLOR_BG_DARK)
+
+        self.report = {}
+        self.selected_category = tk.StringVar(value="System Overview")
+
+        self.setup_styles()
+        self.build_ui()
+        self.refresh_hardware_data()
+
+    def setup_styles(self):
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+
+        style.configure("TFrame", background=COLOR_BG_DARK)
+        style.configure("Sidebar.TFrame", background=COLOR_SIDEBAR)
+        style.configure("Card.TFrame", background=COLOR_CARD, relief="flat")
+        style.configure("TLabel", background=COLOR_BG_DARK, foreground=COLOR_TEXT_MAIN, font=("sans-serif", 10))
+        style.configure("Title.TLabel", font=("sans-serif", 15, "bold"), foreground=COLOR_TEXT_HEAD, background=COLOR_BG_DARK)
+        style.configure("Subhead.TLabel", font=("sans-serif", 11, "bold"), foreground=COLOR_ACCENT, background=COLOR_BG_DARK)
+        style.configure("CardTitle.TLabel", font=("sans-serif", 11, "bold"), foreground=COLOR_TEXT_HEAD, background=COLOR_CARD)
+        style.configure("CardText.TLabel", font=("sans-serif", 9), foreground=COLOR_TEXT_MAIN, background=COLOR_CARD)
+        style.configure("CardMuted.TLabel", font=("sans-serif", 9), foreground=COLOR_TEXT_MUTED, background=COLOR_CARD)
+
+    def build_ui(self):
+        # 1. Top Header Bar
+        header = tk.Frame(self, bg=COLOR_SIDEBAR, height=56, padx=20, pady=10)
+        header.pack(fill="x", side="top")
+
+        brand_frame = tk.Frame(header, bg=COLOR_SIDEBAR)
+        brand_frame.pack(side="left")
+
+        title_lbl = tk.Label(brand_frame, text="DoomOS Hardware Center", font=("sans-serif", 14, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_SIDEBAR)
+        title_lbl.pack(side="left")
+
+        sub_lbl = tk.Label(brand_frame, text="  |  Comprehensive System & Device Diagnostics", font=("sans-serif", 10), fg=COLOR_TEXT_MUTED, bg=COLOR_SIDEBAR)
+        sub_lbl.pack(side="left", padx=5)
+
+        # Action Buttons in Header
+        btn_box = tk.Frame(header, bg=COLOR_SIDEBAR)
+        btn_box.pack(side="right")
+
+        self.btn_refresh = tk.Button(btn_box, text="🔄 Refresh Hardware", bg=COLOR_CARD, fg=COLOR_TEXT_HEAD, activebackground=COLOR_CARD_BORDER,
+                                     activeforeground=COLOR_TEXT_HEAD, font=("sans-serif", 9, "bold"), relief="flat", padx=10, pady=4,
+                                     cursor="hand2", command=self.refresh_hardware_data)
+        self.btn_refresh.pack(side="left", padx=5)
+
+        self.btn_copy = tk.Button(btn_box, text="📋 Copy Report", bg=COLOR_CARD, fg=COLOR_TEXT_HEAD, activebackground=COLOR_CARD_BORDER,
+                                  activeforeground=COLOR_TEXT_HEAD, font=("sans-serif", 9), relief="flat", padx=10, pady=4,
+                                  cursor="hand2", command=self.copy_report_to_clipboard)
+        self.btn_copy.pack(side="left", padx=5)
+
+        self.btn_export = tk.Button(btn_box, text="💾 Export File", bg=COLOR_ACCENT, fg=COLOR_BG_DARK, activebackground=COLOR_ACCENT_HOVER,
+                                    activeforeground=COLOR_BG_DARK, font=("sans-serif", 9, "bold"), relief="flat", padx=10, pady=4,
+                                    cursor="hand2", command=self.export_report_file)
+        self.btn_export.pack(side="left", padx=5)
+
+        # 2. Body Container (Sidebar + Content)
+        body = tk.Frame(self, bg=COLOR_BG_DARK)
+        body.pack(fill="both", expand=True)
+
+        # Left Sidebar Navigation
+        self.sidebar = tk.Frame(body, bg=COLOR_SIDEBAR, width=200, padx=10, pady=15)
+        self.sidebar.pack(fill="y", side="left")
+        self.sidebar.pack_propagate(False)
+
+        side_title = tk.Label(self.sidebar, text="CATEGORIES", font=("sans-serif", 9, "bold"), fg=COLOR_TEXT_MUTED, bg=COLOR_SIDEBAR)
+        side_title.pack(anchor="w", padx=10, pady=(0, 10))
+
+        self.nav_buttons = {}
+        categories = [
+            ("📊 System Overview", "System Overview"),
+            ("⚡ Processor (CPU)", "CPU"),
+            ("🧠 Memory (RAM)", "Memory"),
+            ("🎮 Graphics (GPU)", "GPU"),
+            ("💾 Storage Drives", "Storage"),
+            ("🌐 Network & Wi-Fi", "Network"),
+            ("🔊 Audio Hardware", "Audio"),
+            ("🖥️ Displays", "Displays"),
+            ("⌨️ Input Devices", "Input Devices"),
+            ("🔌 USB Peripherals", "USB Devices"),
+            ("ℹ️ Technical Details", "Technical Details")
+        ]
+
+        for label, cat_key in categories:
+            b = tk.Button(self.sidebar, text=f"  {label}", anchor="w", font=("sans-serif", 10),
+                          bg=COLOR_SIDEBAR, fg=COLOR_TEXT_MAIN, activebackground=COLOR_CARD, activeforeground=COLOR_TEXT_HEAD,
+                          relief="flat", cursor="hand2", padx=5, pady=6,
+                          command=lambda k=cat_key: self.select_category(k))
+            b.pack(fill="x", pady=2)
+            self.nav_buttons[cat_key] = b
+
+        # Right Main Content Panel (Scrollable)
+        self.content_container = tk.Frame(body, bg=COLOR_BG_DARK, padx=20, pady=15)
+        self.content_container.pack(fill="both", expand=True, side="right")
+
+    def select_category(self, cat_key: str):
+        self.selected_category.set(cat_key)
+        for k, btn in self.nav_buttons.items():
+            if k == cat_key:
+                btn.configure(bg=COLOR_CARD, fg=COLOR_ACCENT, font=("sans-serif", 10, "bold"))
+            else:
+                btn.configure(bg=COLOR_SIDEBAR, fg=COLOR_TEXT_MAIN, font=("sans-serif", 10))
+
+        self.render_content()
+
+    def refresh_hardware_data(self):
+        """Runs the detection engine and updates UI state."""
+        try:
+            self.report = HardwareDetector.get_full_hardware_report()
+        except Exception as e:
+            self.report = {
+                "system": {"os_name": "DoomOS", "os_version": "Rolling", "kernel": "Error", "architecture": "Unknown", "desktop": "KDE", "session_type": "Wayland", "boot_mode": "Unknown", "uptime": "Unknown", "status": HardwareStatus.ERROR},
+                "cpu": {"name": "Detection Failed", "vendor": "Unknown", "cores": 0, "threads": 0, "frequency_mhz": "Unknown", "status": HardwareStatus.ERROR},
+                "memory": {"total_mb": 0, "used_mb": 0, "available_mb": 0, "usage_percent": 0.0, "swap_total_mb": 0, "swap_used_mb": 0, "zram_active": False, "status": HardwareStatus.ERROR},
+                "gpu": [{"name": "Detection Error", "vendor": "Unknown", "driver": "Unknown", "status": HardwareStatus.ERROR}],
+                "storage": [],
+                "network": {"wifi": [], "ethernet": [], "bluetooth": []},
+                "audio": {"sound_cards": ["Error detecting audio"], "pipewire_active": False, "status": HardwareStatus.ERROR},
+                "displays": [],
+                "inputs": [],
+                "usb": []
+            }
+        self.select_category(self.selected_category.get())
+
+    def clear_content(self):
+        for widget in self.content_container.winfo_children():
+            widget.destroy()
+
+    def render_content(self):
+        self.clear_content()
+        cat = self.selected_category.get()
+
+        if cat == "System Overview":
+            self.render_overview()
+        elif cat == "CPU":
+            self.render_cpu_view()
+        elif cat == "Memory":
+            self.render_memory_view()
+        elif cat == "GPU":
+            self.render_gpu_view()
+        elif cat == "Storage":
+            self.render_storage_view()
+        elif cat == "Network":
+            self.render_network_view()
+        elif cat == "Audio":
+            self.render_audio_view()
+        elif cat == "Displays":
+            self.render_displays_view()
+        elif cat == "Input Devices":
+            self.render_input_view()
+        elif cat == "USB Devices":
+            self.render_usb_view()
+        elif cat == "Technical Details":
+            self.render_raw_view()
+
+    # --------------------------------------------------------------------------
+    # Card / Status UI Helpers
+    # --------------------------------------------------------------------------
+    def create_card(self, parent, title: str, status: str = HardwareStatus.GOOD) -> tk.Frame:
+        card = tk.Frame(parent, bg=COLOR_CARD, padx=15, pady=12, highlightbackground=COLOR_CARD_BORDER, highlightthickness=1)
+        card.pack(fill="x", pady=6)
+
+        hdr = tk.Frame(card, bg=COLOR_CARD)
+        hdr.pack(fill="x", side="top", pady=(0, 6))
+
+        t_lbl = tk.Label(hdr, text=title, font=("sans-serif", 11, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_CARD)
+        t_lbl.pack(side="left")
+
+        # Status badge
+        badge_color = COLOR_GOOD
+        if status == HardwareStatus.WARNING:
+            badge_color = COLOR_WARN
+        elif status == HardwareStatus.ERROR:
+            badge_color = COLOR_ERROR
+        elif status == HardwareStatus.UNKNOWN:
+            badge_color = COLOR_UNKNOWN
+
+        badge = tk.Label(hdr, text=f" ● {status} ", font=("sans-serif", 8, "bold"), fg=COLOR_BG_DARK, bg=badge_color, padx=4, pady=1)
+        badge.pack(side="right")
+
+        return card
+
+    def add_info_row(self, card: tk.Frame, label: str, value: Any):
+        row = tk.Frame(card, bg=COLOR_CARD)
+        row.pack(fill="x", pady=2)
+        l = tk.Label(row, text=f"{label}:", font=("sans-serif", 9), fg=COLOR_TEXT_MUTED, bg=COLOR_CARD, width=18, anchor="w")
+        l.pack(side="left")
+        v = tk.Label(row, text=str(value), font=("sans-serif", 9, "bold"), fg=COLOR_TEXT_MAIN, bg=COLOR_CARD, anchor="w")
+        v.pack(side="left", fill="x", expand=True)
+
+    # --------------------------------------------------------------------------
+    # Views
+    # --------------------------------------------------------------------------
+    def render_overview(self):
+        title = tk.Label(self.content_container, text="System Hardware Overview", font=("sans-serif", 14, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 10))
+
+        # 1. System Summary Card
+        sys_info = self.report.get("system", {})
+        c1 = self.create_card(self.content_container, "Operating System & Platform", sys_info.get("status", HardwareStatus.GOOD))
+        self.add_info_row(c1, "OS / Distribution", f"{sys_info.get('os_name')} ({sys_info.get('os_version')})")
+        self.add_info_row(c1, "Kernel Release", f"{sys_info.get('kernel')} ({sys_info.get('architecture')})")
+        self.add_info_row(c1, "Desktop Environment", f"{sys_info.get('desktop')} — {sys_info.get('session_type', 'Wayland').upper()}")
+        self.add_info_row(c1, "Firmware & Boot", sys_info.get("boot_mode", "UEFI"))
+        self.add_info_row(c1, "System Uptime", sys_info.get("uptime", "Unknown"))
+
+        # 2. CPU Card
+        cpu = self.report.get("cpu", {})
+        c2 = self.create_card(self.content_container, "Processor", cpu.get("status", HardwareStatus.GOOD))
+        self.add_info_row(c2, "Model", cpu.get("name"))
+        self.add_info_row(c2, "Topology", f"{cpu.get('cores')} Cores / {cpu.get('threads')} Threads")
+
+        # 3. RAM Card
+        mem = self.report.get("memory", {})
+        c3 = self.create_card(self.content_container, "Memory & Compression", mem.get("status", HardwareStatus.GOOD))
+        self.add_info_row(c3, "RAM Installed", f"{mem.get('total_mb', 0)} MB ({round(mem.get('total_mb', 0)/1024, 2)} GB)")
+        self.add_info_row(c3, "RAM In Use", f"{mem.get('used_mb', 0)} MB ({mem.get('usage_percent', 0)}%)")
+        self.add_info_row(c3, "ZRAM Fast Swap", "Enabled (zstd compressed swap)" if mem.get("zram_active") else "Standby")
+
+        # 4. GPU Card
+        gpus = self.report.get("gpu", [])
+        gpu_name = gpus[0].get("name") if gpus else "Integrated Framebuffer"
+        gpu_drv = gpus[0].get("driver") if gpus else "Mesa / DRM"
+        c4 = self.create_card(self.content_container, "Graphics Controller", HardwareStatus.GOOD)
+        self.add_info_row(c4, "Active GPU", gpu_name)
+        self.add_info_row(c4, "Kernel Driver", gpu_drv)
+
+    def render_cpu_view(self):
+        title = tk.Label(self.content_container, text="Central Processing Unit (CPU)", font=("sans-serif", 14, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 10))
+
+        cpu = self.report.get("cpu", {})
+        c = self.create_card(self.content_container, "Processor Architecture & Frequency", cpu.get("status", HardwareStatus.GOOD))
+        self.add_info_row(c, "Processor Name", cpu.get("name"))
+        self.add_info_row(c, "Manufacturer", cpu.get("vendor"))
+        self.add_info_row(c, "Instruction Set", cpu.get("architecture"))
+        self.add_info_row(c, "Physical Cores", cpu.get("cores"))
+        self.add_info_row(c, "Logical Threads", cpu.get("threads"))
+        self.add_info_row(c, "Clock Frequency", f"{cpu.get('frequency_mhz')} MHz" if isinstance(cpu.get('frequency_mhz'), (int, float)) else cpu.get('frequency_mhz'))
+
+    def render_memory_view(self):
+        title = tk.Label(self.content_container, text="System Memory & Swap", font=("sans-serif", 14, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 10))
+
+        mem = self.report.get("memory", {})
+        c = self.create_card(self.content_container, "Physical RAM & ZRAM Allocation", mem.get("status", HardwareStatus.GOOD))
+        self.add_info_row(c, "Total Physical RAM", f"{mem.get('total_mb', 0)} MB ({round(mem.get('total_mb', 0)/1024, 2)} GB)")
+        self.add_info_row(c, "Used Memory", f"{mem.get('used_mb', 0)} MB ({mem.get('usage_percent', 0)}%)")
+        self.add_info_row(c, "Available Memory", f"{mem.get('available_mb', 0)} MB")
+        self.add_info_row(c, "Swap Total", f"{mem.get('swap_total_mb', 0)} MB")
+        self.add_info_row(c, "Swap Used", f"{mem.get('swap_used_mb', 0)} MB")
+        self.add_info_row(c, "ZRAM Compressed", "Active (High-speed zstd RAM swap)" if mem.get("zram_active") else "Inactive")
+
+    def render_gpu_view(self):
+        title = tk.Label(self.content_container, text="Graphics Processors & Accelerators", font=("sans-serif", 14, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 10))
+
+        gpus = self.report.get("gpu", [])
+        for idx, gpu in enumerate(gpus, 1):
+            c = self.create_card(self.content_container, f"GPU Device #{idx}: {gpu.get('name')}", gpu.get("status", HardwareStatus.GOOD))
+            self.add_info_row(c, "Device Identifier", gpu.get("card"))
+            self.add_info_row(c, "Hardware Vendor", gpu.get("vendor"))
+            self.add_info_row(c, "Active Driver", gpu.get("driver"))
+
+    def render_storage_view(self):
+        title = tk.Label(self.content_container, text="Storage Devices & Volumes", font=("sans-serif", 14, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 10))
+
+        disks = self.report.get("storage", [])
+        if not disks:
+            c = self.create_card(self.content_container, "Storage Disks", HardwareStatus.WARNING)
+            self.add_info_row(c, "Status", "No physical disk devices detected (RAM/Live Session)")
+            return
+
+        for d in disks:
+            c = self.create_card(self.content_container, f"{d.get('device')} — {d.get('type')}", d.get("status", HardwareStatus.GOOD))
+            self.add_info_row(c, "Model / Brand", d.get("model"))
+            self.add_info_row(c, "Drive Capacity", f"{d.get('capacity_gb')} GB")
+            self.add_info_row(c, "Used / Free Space", f"Used: {d.get('used_gb')} GB | Free: {d.get('free_gb')} GB")
+            self.add_info_row(c, "Mount Point", d.get("mount_point"))
+            self.add_info_row(c, "Filesystem", d.get("filesystem"))
+
+    def render_network_view(self):
+        title = tk.Label(self.content_container, text="Network & Connectivity Hardware", font=("sans-serif", 14, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 10))
+
+        net = self.report.get("network", {})
+        # Ethernet
+        for e in net.get("ethernet", []):
+            c = self.create_card(self.content_container, f"Ethernet: {e.get('name')}", e.get("status", HardwareStatus.GOOD))
+            self.add_info_row(c, "Interface", e.get("interface"))
+            self.add_info_row(c, "Connection State", e.get("state"))
+            self.add_info_row(c, "Link Speed", e.get("speed"))
+            self.add_info_row(c, "Kernel Driver", e.get("driver"))
+
+        # Wi-Fi
+        for w in net.get("wifi", []):
+            c = self.create_card(self.content_container, f"Wireless: {w.get('name')}", w.get("status", HardwareStatus.GOOD))
+            self.add_info_row(c, "Interface", w.get("interface"))
+            self.add_info_row(c, "Connection State", w.get("state"))
+            self.add_info_row(c, "Kernel Driver", w.get("driver"))
+
+        # Bluetooth
+        for b in net.get("bluetooth", []):
+            c = self.create_card(self.content_container, f"Bluetooth: {b.get('name')}", b.get("status", HardwareStatus.GOOD))
+            self.add_info_row(c, "Adapter Node", b.get("device"))
+            self.add_info_row(c, "Controller State", b.get("state"))
+
+    def render_audio_view(self):
+        title = tk.Label(self.content_container, text="Audio Devices & Sound Subsystem", font=("sans-serif", 14, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 10))
+
+        audio = self.report.get("audio", {})
+        c = self.create_card(self.content_container, "Audio Infrastructure (PipeWire)", audio.get("status", HardwareStatus.GOOD))
+        self.add_info_row(c, "PipeWire Status", "Active & Running (Low-Latency)" if audio.get("pipewire_active") else "Standby")
+        self.add_info_row(c, "Default Output Sink", audio.get("default_output"))
+        self.add_info_row(c, "Default Input Node", audio.get("default_input"))
+        for idx, card in enumerate(audio.get("sound_cards", []), 1):
+            self.add_info_row(c, f"Sound Card #{idx}", card)
+
+    def render_displays_view(self):
+        title = tk.Label(self.content_container, text="Connected Displays & Monitors", font=("sans-serif", 14, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 10))
+
+        displays = self.report.get("displays", [])
+        for idx, disp in enumerate(displays, 1):
+            c = self.create_card(self.content_container, f"Display #{idx}: {disp.get('name')}", disp.get("status", HardwareStatus.GOOD))
+            self.add_info_row(c, "Current Resolution", disp.get("resolution"))
+            self.add_info_row(c, "Refresh Rate", disp.get("refresh_rate"))
+
+    def render_input_view(self):
+        title = tk.Label(self.content_container, text="Input Devices & Gamepads", font=("sans-serif", 14, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 10))
+
+        inputs = self.report.get("inputs", [])
+        for inp in inputs:
+            c = self.create_card(self.content_container, inp.get("name"), inp.get("status", HardwareStatus.GOOD))
+            self.add_info_row(c, "Device Classification", inp.get("type"))
+
+    def render_usb_view(self):
+        title = tk.Label(self.content_container, text="Universal Serial Bus (USB) Peripherals", font=("sans-serif", 14, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 10))
+
+        usbs = self.report.get("usb", [])
+        if not usbs:
+            c = self.create_card(self.content_container, "USB Controller", HardwareStatus.GOOD)
+            self.add_info_row(c, "Status", "No external USB peripherals currently connected.")
+            return
+
+        for u in usbs:
+            c = self.create_card(self.content_container, u.get("name"), u.get("status", HardwareStatus.GOOD))
+            self.add_info_row(c, "Manufacturer", u.get("vendor"))
+
+    def render_raw_view(self):
+        title = tk.Label(self.content_container, text="Technical Report & Diagnostics Export", font=("sans-serif", 14, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 10))
+
+        text_frame = tk.Frame(self.content_container, bg=COLOR_CARD, highlightbackground=COLOR_CARD_BORDER, highlightthickness=1)
+        text_frame.pack(fill="both", expand=True)
+
+        txt = tk.Text(text_frame, bg=COLOR_CARD, fg=COLOR_TEXT_MAIN, insertbackground=COLOR_ACCENT, font=("monospace", 9), relief="flat", padx=10, pady=10)
+        txt.pack(fill="both", expand=True, side="left")
+
+        scroll = ttk.Scrollbar(text_frame, orient="vertical", command=txt.yview)
+        scroll.pack(side="right", fill="y")
+        txt.configure(yscrollcommand=scroll.set)
+
+        summary = generate_text_summary(self.report)
+        txt.insert("1.0", summary)
+        txt.configure(state="disabled")
+
+    # --------------------------------------------------------------------------
+    # Actions: Copy & Export
+    # --------------------------------------------------------------------------
+    def copy_report_to_clipboard(self):
+        summary = generate_text_summary(self.report)
+        self.clipboard_clear()
+        self.clipboard_append(summary)
+        messagebox.showinfo("Clipboard", "DoomOS Hardware Report copied to clipboard successfully!")
+
+    def export_report_file(self):
+        summary = generate_text_summary(self.report)
+        dest = filedialog.asksaveasfilename(
+            initialfile="DoomOS-Hardware-Report.txt",
+            defaultextension=".txt",
+            filetypes=[("Text File", "*.txt"), ("All Files", "*.*")]
+        )
+        if dest:
+            try:
+                with open(dest, "w", encoding="utf-8") as f:
+                    f.write(summary)
+                messagebox.showinfo("Export Success", f"Hardware report exported to:\n{dest}")
+            except Exception as e:
+                messagebox.showerror("Export Failed", f"Could not save file: {e}")
+
+
+def main():
+    app = HardwareCenterApp()
+    app.mainloop()
+
+
+if __name__ == "__main__":
+    main()

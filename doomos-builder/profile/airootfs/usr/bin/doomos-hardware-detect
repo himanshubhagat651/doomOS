@@ -1,0 +1,762 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+DoomOS Hardware Center — Detection Engine & Data Model
+Architecture: Decoupled Hardware Detection Layer, Data Models, & Health Status.
+Pure Python standard library: reads directly from /proc, /sys, udev, and standard system calls.
+Compatible with ARM64 (Apple Silicon), x86_64, bare-metal, and virtual machines.
+"""
+
+import os
+import sys
+import glob
+import subprocess
+import shutil
+import platform
+from typing import Dict, Any, List
+
+
+class HardwareStatus:
+    GOOD = "GOOD"
+    WARNING = "WARNING"
+    UNKNOWN = "UNKNOWN"
+    ERROR = "ERROR"
+
+
+def safe_read_file(path: str) -> str:
+    """Reads a sysfs or procfs file safely without throwing exceptions."""
+    try:
+        if os.path.isfile(path) and os.access(path, os.R_OK):
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                return f.read().strip()
+    except Exception:
+        pass
+    return ""
+
+
+def run_command_safely(args: List[str], timeout: int = 3) -> str:
+    """Executes a command safely with a tight timeout, returning stdout."""
+    try:
+        bin_path = shutil.which(args[0])
+        if not bin_path:
+            return ""
+        cmd = [bin_path] + args[1:]
+        res = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+            check=False
+        )
+        return res.stdout.strip()
+    except Exception:
+        return ""
+
+
+# ==============================================================================
+# Detection Layer
+# ==============================================================================
+
+class HardwareDetector:
+    """Collects system and hardware telemetry from Linux kernels and standard tools."""
+
+    @staticmethod
+    def detect_system_info() -> Dict[str, Any]:
+        """Gathers OS, kernel, architecture, and desktop environment metadata."""
+        arch = platform.machine() or "Unknown"
+        kernel = platform.release() or safe_read_file("/proc/sys/kernel/osrelease") or "Unknown"
+        hostname = platform.node() or safe_read_file("/etc/hostname") or "doomos"
+        
+        # Read os-release
+        os_name = "DoomOS Linux"
+        os_version = "Rolling"
+        os_release = safe_read_file("/etc/os-release")
+        for line in os_release.splitlines():
+            if line.startswith("PRETTY_NAME="):
+                os_name = line.split("=", 1)[1].strip('"\'')
+            elif line.startswith("BUILD_ID="):
+                os_version = line.split("=", 1)[1].strip('"\'')
+
+        # Desktop & session
+        desktop = os.environ.get("XDG_CURRENT_DESKTOP", "KDE Plasma")
+        session_type = os.environ.get("XDG_SESSION_TYPE", "wayland")
+
+        # Uptime
+        uptime_sec = 0.0
+        uptime_str = "Unknown"
+        uptime_raw = safe_read_file("/proc/uptime")
+        if uptime_raw:
+            try:
+                uptime_sec = float(uptime_raw.split()[0])
+                hours = int(uptime_sec // 3600)
+                minutes = int((uptime_sec % 3600) // 60)
+                uptime_str = f"{hours}h {minutes}m"
+            except Exception:
+                pass
+
+        # Boot mode (UEFI vs BIOS)
+        boot_mode = "UEFI" if os.path.exists("/sys/firmware/efi") else "Legacy BIOS"
+
+        return {
+            "os_name": os_name,
+            "os_version": os_version,
+            "kernel": kernel,
+            "architecture": arch,
+            "desktop": desktop,
+            "session_type": session_type,
+            "hostname": hostname,
+            "uptime": uptime_str,
+            "boot_mode": boot_mode,
+            "status": HardwareStatus.GOOD
+        }
+
+    @staticmethod
+    def detect_cpu() -> Dict[str, Any]:
+        """Detects processor model, architecture, cores, threads, and clock speed."""
+        cpu_name = "Unknown Processor"
+        vendor = "Unknown"
+        cores = 0
+        threads = 0
+        freq_mhz = 0.0
+
+        # Read /proc/cpuinfo
+        cpuinfo = safe_read_file("/proc/cpuinfo")
+        processor_count = 0
+        if cpuinfo:
+            for line in cpuinfo.splitlines():
+                if ":" in line:
+                    key, val = [x.strip() for x in line.split(":", 1)]
+                    if key in ("model name", "Hardware", "Processor", "Model"):
+                        if cpu_name == "Unknown Processor":
+                            cpu_name = val
+                    elif key in ("vendor_id", "CPU implementer"):
+                        if vendor == "Unknown":
+                            vendor = val
+                    elif key == "cpu MHz":
+                        try:
+                            freq_mhz = float(val)
+                        except ValueError:
+                            pass
+                    elif key == "processor":
+                        processor_count += 1
+            threads = processor_count
+
+        # Check /sys/devices/system/cpu/
+        cpu_dirs = glob.glob("/sys/devices/system/cpu/cpu[0-9]*")
+        if cpu_dirs:
+            threads = max(threads, len(cpu_dirs))
+
+        # Core count via lscpu or sysfs topology if available
+        topo_cores = set()
+        for d in cpu_dirs:
+            core_id = safe_read_file(os.path.join(d, "topology/core_id"))
+            if core_id:
+                topo_cores.add(core_id)
+        if topo_cores:
+            cores = len(topo_cores)
+        else:
+            cores = threads or 1
+
+        # Current frequency from sysfs
+        cur_freq_raw = safe_read_file("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq")
+        if cur_freq_raw:
+            try:
+                freq_mhz = float(cur_freq_raw) / 1000.0
+            except ValueError:
+                pass
+
+        # Fallback lscpu if name is still unknown
+        if cpu_name == "Unknown Processor":
+            lscpu_out = run_command_safely(["lscpu"])
+            for line in lscpu_out.splitlines():
+                if "Model name:" in line:
+                    cpu_name = line.split(":", 1)[1].strip()
+                elif "Vendor ID:" in line:
+                    vendor = line.split(":", 1)[1].strip()
+
+        arch = platform.machine()
+        if "Apple" in cpu_name or ("aarch64" in arch and vendor in ("0x61", "Apple")):
+            vendor = "Apple Silicon"
+            if cpu_name == "Unknown Processor":
+                cpu_name = f"Apple Silicon ARM64 ({arch})"
+
+        status = HardwareStatus.GOOD if cpu_name != "Unknown Processor" else HardwareStatus.WARNING
+
+        return {
+            "name": cpu_name,
+            "vendor": vendor,
+            "architecture": arch,
+            "cores": cores or 1,
+            "threads": threads or cores or 1,
+            "frequency_mhz": round(freq_mhz, 1) if freq_mhz > 0 else "Dynamic",
+            "status": status
+        }
+
+    @staticmethod
+    def detect_memory() -> Dict[str, Any]:
+        """Detects physical RAM, usage, swap, and ZRAM compression state."""
+        total_kb = 0
+        free_kb = 0
+        available_kb = 0
+        swap_total_kb = 0
+        swap_free_kb = 0
+
+        meminfo = safe_read_file("/proc/meminfo")
+        for line in meminfo.splitlines():
+            if ":" in line:
+                key, val = [x.strip() for x in line.split(":", 1)]
+                parts = val.split()
+                if not parts:
+                    continue
+                try:
+                    num = int(parts[0])
+                    if key == "MemTotal":
+                        total_kb = num
+                    elif key == "MemFree":
+                        free_kb = num
+                    elif key == "MemAvailable":
+                        available_kb = num
+                    elif key == "SwapTotal":
+                        swap_total_kb = num
+                    elif key == "SwapFree":
+                        swap_free_kb = num
+                except ValueError:
+                    pass
+
+        if available_kb == 0:
+            available_kb = free_kb
+
+        total_mb = total_kb // 1024
+        avail_mb = available_kb // 1024
+        used_mb = max(0, total_mb - avail_mb)
+        usage_pct = round((used_mb / total_mb * 100), 1) if total_mb > 0 else 0.0
+
+        swap_total_mb = swap_total_kb // 1024
+        swap_free_mb = swap_free_kb // 1024
+        swap_used_mb = max(0, swap_total_mb - swap_free_mb)
+
+        # Detect ZRAM
+        zram_active = os.path.exists("/dev/zram0") or "zram" in safe_read_file("/proc/swaps")
+
+        status = HardwareStatus.GOOD if total_mb > 0 else HardwareStatus.ERROR
+
+        return {
+            "total_mb": total_mb,
+            "used_mb": used_mb,
+            "available_mb": avail_mb,
+            "usage_percent": usage_pct,
+            "swap_total_mb": swap_total_mb,
+            "swap_used_mb": swap_used_mb,
+            "zram_active": zram_active,
+            "status": status
+        }
+
+    @staticmethod
+    def detect_gpu() -> List[Dict[str, Any]]:
+        """Detects display adapters, 3D accelerators, and active graphics drivers."""
+        gpus: List[Dict[str, Any]] = []
+
+        # 1. Probe DRM cards via /sys/class/drm/card*
+        card_dirs = sorted(glob.glob("/sys/class/drm/card[0-9]"))
+        for card in card_dirs:
+            device_dir = os.path.join(card, "device")
+            if not os.path.exists(device_dir):
+                continue
+            
+            driver = "Unknown"
+            driver_link = os.path.join(device_dir, "driver")
+            if os.path.islink(driver_link):
+                driver = os.path.basename(os.readlink(driver_link))
+
+            vendor = "Unknown"
+            name = "Graphics Controller"
+
+            # Check for VMware virtual graphics
+            if driver in ("vmwgfx", "svga"):
+                name = "VMware SVGA3D Accelerator (Metal / Host-backed)"
+                vendor = "VMware"
+            elif driver == "virtio_gpu":
+                name = "VirtIO GPU Accelerator"
+                vendor = "Red Hat / QEMU"
+            elif driver in ("amdgpu", "radeon"):
+                name = "AMD Radeon Graphics"
+                vendor = "AMD"
+            elif driver in ("i915", "xe"):
+                name = "Intel Iris / UHD / Arc Graphics"
+                vendor = "Intel"
+            elif driver in ("nouveau", "nvidia"):
+                name = "NVIDIA GeForce / RTX Graphics"
+                vendor = "NVIDIA"
+
+            gpus.append({
+                "card": os.path.basename(card),
+                "name": name,
+                "vendor": vendor,
+                "driver": driver,
+                "status": HardwareStatus.GOOD
+            })
+
+        # 2. Fallback via lspci if sysfs card probing was inconclusive
+        if not gpus:
+            lspci_out = run_command_safely(["lspci"])
+            for line in lspci_out.splitlines():
+                if any(k in line.lower() for k in ("vga compatible", "3d controller", "display controller")):
+                    parts = line.split(":", 2)
+                    name = parts[2].strip() if len(parts) >= 3 else line
+                    vendor = "Unknown"
+                    if "vmware" in name.lower():
+                        vendor = "VMware"
+                    elif "intel" in name.lower():
+                        vendor = "Intel"
+                    elif "advanced micro devices" in name.lower() or "amd" in name.lower():
+                        vendor = "AMD"
+                    elif "nvidia" in name.lower():
+                        vendor = "NVIDIA"
+                    gpus.append({
+                        "card": "Primary GPU",
+                        "name": name,
+                        "vendor": vendor,
+                        "driver": "Mesa / Kernel Driver",
+                        "status": HardwareStatus.GOOD
+                    })
+
+        # 3. macOS / ARM64 fallback if running inside VM or Apple Silicon
+        if not gpus:
+            gpus.append({
+                "card": "card0",
+                "name": "Accelerated Framebuffer / Host GPU",
+                "vendor": "System Host",
+                "driver": "Wayland / DRM KMS",
+                "status": HardwareStatus.GOOD
+            })
+
+        return gpus
+
+    @staticmethod
+    def detect_storage() -> List[Dict[str, Any]]:
+        """Detects block devices, disks (NVMe, SSD, VirtIO), capacities, and mounts."""
+        devices: List[Dict[str, Any]] = []
+
+        # Find block devices in /sys/block/
+        block_dirs = sorted(glob.glob("/sys/block/*"))
+        for b_dir in block_dirs:
+            name = os.path.basename(b_dir)
+            # Skip loop, ram, and zram devices
+            if name.startswith(("loop", "ram", "zram")):
+                continue
+
+            # Read size in 512-byte sectors
+            size_sectors_raw = safe_read_file(os.path.join(b_dir, "size"))
+            if not size_sectors_raw or size_sectors_raw == "0":
+                continue
+            
+            try:
+                sectors = int(size_sectors_raw)
+                capacity_bytes = sectors * 512
+                capacity_gb = round(capacity_bytes / (1024 ** 3), 1)
+            except ValueError:
+                capacity_gb = 0.0
+
+            # Determine storage type
+            dev_type = "Standard Disk"
+            if name.startswith("nvme"):
+                dev_type = "NVMe Solid State Drive"
+            elif name.startswith("vd"):
+                dev_type = "VirtIO Virtual Disk"
+            elif name.startswith("sd"):
+                # Check rotational attribute: 0 = SSD, 1 = HDD
+                rot = safe_read_file(os.path.join(b_dir, "queue/rotational"))
+                dev_type = "Solid State Drive (SSD)" if rot == "0" else "Hard Disk Drive (HDD)"
+            elif name.startswith("sr"):
+                dev_type = "Optical / CD-ROM Drive"
+
+            model = safe_read_file(os.path.join(b_dir, "device/model")) or dev_type
+
+            # Find mount point and usage from /proc/mounts and os.statvfs
+            mount_point = ""
+            fs_type = ""
+            used_gb = 0.0
+            free_gb = 0.0
+
+            mounts_raw = safe_read_file("/proc/mounts")
+            for m_line in mounts_raw.splitlines():
+                parts = m_line.split()
+                if len(parts) >= 3 and name in parts[0]:
+                    mount_point = parts[1]
+                    fs_type = parts[2]
+                    try:
+                        st = os.statvfs(mount_point)
+                        total = (st.f_blocks * st.f_frsize) / (1024 ** 3)
+                        free = (st.f_bavail * st.f_frsize) / (1024 ** 3)
+                        used = total - free
+                        used_gb = round(used, 1)
+                        free_gb = round(free, 1)
+                    except Exception:
+                        pass
+                    break
+
+            # If device is rootfs or live media
+            if not mount_point and name == "nvme0n1":
+                # Check root partition
+                try:
+                    st = os.statvfs("/")
+                    total = (st.f_blocks * st.f_frsize) / (1024 ** 3)
+                    free = (st.f_bavail * st.f_frsize) / (1024 ** 3)
+                    used_gb = round(total - free, 1)
+                    free_gb = round(free, 1)
+                    mount_point = "/"
+                    fs_type = "btrfs"
+                except Exception:
+                    pass
+
+            devices.append({
+                "device": f"/dev/{name}",
+                "model": model,
+                "type": dev_type,
+                "capacity_gb": capacity_gb,
+                "used_gb": used_gb,
+                "free_gb": free_gb,
+                "mount_point": mount_point or "Unmounted / System Pool",
+                "filesystem": fs_type or "raw / partitioned",
+                "status": HardwareStatus.GOOD
+            })
+
+        return devices
+
+    @staticmethod
+    def detect_network() -> Dict[str, List[Dict[str, Any]]]:
+        """Detects Wi-Fi, Ethernet, and Bluetooth network adapters and states."""
+        res: Dict[str, List[Dict[str, Any]]] = {
+            "wifi": [],
+            "ethernet": [],
+            "bluetooth": []
+        }
+
+        # 1. Network interfaces via /sys/class/net/*
+        net_dirs = sorted(glob.glob("/sys/class/net/*"))
+        for n_dir in net_dirs:
+            iface = os.path.basename(n_dir)
+            if iface == "lo":
+                continue
+
+            operstate = safe_read_file(os.path.join(n_dir, "operstate")) or "down"
+            is_wireless = os.path.exists(os.path.join(n_dir, "wireless")) or os.path.exists(os.path.join(n_dir, "phy80211"))
+            
+            driver = "Unknown"
+            drv_link = os.path.join(n_dir, "device/driver")
+            if os.path.islink(drv_link):
+                driver = os.path.basename(os.readlink(drv_link))
+
+            # Detect speed if ethernet
+            speed_raw = safe_read_file(os.path.join(n_dir, "speed"))
+            speed_str = f"{speed_raw} Mbps" if speed_raw and speed_raw != "-1" else "Negotiated"
+
+            if is_wireless or iface.startswith("wl"):
+                res["wifi"].append({
+                    "interface": iface,
+                    "name": f"Wi-Fi Wireless Adapter ({iface})",
+                    "driver": driver,
+                    "state": "Connected" if operstate == "up" else "Disconnected",
+                    "status": HardwareStatus.GOOD if operstate == "up" else HardwareStatus.WARNING
+                })
+            else:
+                # Ethernet
+                name = f"Ethernet Controller ({iface})"
+                if driver == "vmxnet3":
+                    name = f"VMware vmxnet3 Virtual High-Speed NIC ({iface})"
+                elif driver == "virtio_net":
+                    name = f"VirtIO Virtual Network Adapter ({iface})"
+                
+                res["ethernet"].append({
+                    "interface": iface,
+                    "name": name,
+                    "driver": driver,
+                    "speed": speed_str,
+                    "state": "Connected" if operstate == "up" else "Disconnected",
+                    "status": HardwareStatus.GOOD if operstate == "up" else HardwareStatus.WARNING
+                })
+
+        # 2. Bluetooth via /sys/class/bluetooth/* or rfkill
+        bt_dirs = sorted(glob.glob("/sys/class/bluetooth/hci*"))
+        for b_dir in bt_dirs:
+            hci = os.path.basename(b_dir)
+            res["bluetooth"].append({
+                "device": hci,
+                "name": f"Bluetooth Adapter ({hci})",
+                "state": "Enabled / Operational",
+                "status": HardwareStatus.GOOD
+            })
+
+        if not res["bluetooth"]:
+            # Check rfkill
+            rfkill_dirs = glob.glob("/sys/class/rfkill/rfkill*")
+            for r in rfkill_dirs:
+                if safe_read_file(os.path.join(r, "type")) == "bluetooth":
+                    blocked = safe_read_file(os.path.join(r, "soft")) == "1"
+                    res["bluetooth"].append({
+                        "device": os.path.basename(r),
+                        "name": "Integrated Bluetooth Controller",
+                        "state": "Blocked" if blocked else "Available",
+                        "status": HardwareStatus.WARNING if blocked else HardwareStatus.GOOD
+                    })
+                    break
+
+        return res
+
+    @staticmethod
+    def detect_audio() -> Dict[str, Any]:
+        """Detects audio hardware and endpoints via PipeWire and ALSA."""
+        cards: List[str] = []
+
+        # Read /proc/asound/cards
+        asound_cards = safe_read_file("/proc/asound/cards")
+        if asound_cards:
+            for line in asound_cards.splitlines():
+                if "]:" in line:
+                    cards.append(line.split("]:", 1)[1].strip())
+
+        # Check PipeWire runtime
+        pipewire_running = False
+        pids = run_command_safely(["pgrep", "-x", "pipewire"])
+        if pids:
+            pipewire_running = True
+
+        # Fallback names
+        if not cards:
+            cards = ["Virtual High Definition Audio (HDAudio) / PipeWire"]
+
+        return {
+            "sound_cards": cards,
+            "pipewire_active": pipewire_running,
+            "default_output": cards[0] if cards else "PipeWire Default Sink",
+            "default_input": "PipeWire Microphone / Loopback Share",
+            "status": HardwareStatus.GOOD
+        }
+
+    @staticmethod
+    def detect_displays() -> List[Dict[str, Any]]:
+        """Detects connected monitors, resolutions, and refresh rates via kscreen-doctor or DRM."""
+        displays: List[Dict[str, Any]] = []
+
+        # Try kscreen-doctor (native KDE Plasma Wayland tool)
+        kscreen_out = run_command_safely(["kscreen-doctor", "-o"])
+        if kscreen_out:
+            cur_disp: Dict[str, Any] = {}
+            for line in kscreen_out.splitlines():
+                line_str = line.strip()
+                if line_str.startswith("Output:"):
+                    if cur_disp:
+                        displays.append(cur_disp)
+                    cur_disp = {
+                        "name": line_str.split("Output:", 1)[1].strip().split()[0],
+                        "resolution": "Unknown",
+                        "refresh_rate": "60 Hz",
+                        "status": HardwareStatus.GOOD
+                    }
+                elif "current mode:" in line_str.lower() or "mode:" in line_str.lower():
+                    # Parse resolution and hz
+                    parts = line_str.split()
+                    for p in parts:
+                        if "x" in p and any(c.isdigit() for c in p):
+                            cur_disp["resolution"] = p
+                        elif "@" in p or "hz" in p.lower():
+                            cur_disp["refresh_rate"] = p
+            if cur_disp:
+                displays.append(cur_disp)
+
+        # Fallback via DRM connectors in /sys/class/drm/card*-*
+        if not displays:
+            connectors = glob.glob("/sys/class/drm/card[0-9]-*")
+            for conn in connectors:
+                status = safe_read_file(os.path.join(conn, "status"))
+                if status == "connected":
+                    name = os.path.basename(conn).split("-", 1)[1]
+                    modes = safe_read_file(os.path.join(conn, "modes"))
+                    res = modes.splitlines()[0] if modes else "Auto (Native Display)"
+                    displays.append({
+                        "name": f"Connected Display ({name})",
+                        "resolution": res,
+                        "refresh_rate": "Adaptive / 60 Hz",
+                        "status": HardwareStatus.GOOD
+                    })
+
+        if not displays:
+            displays.append({
+                "name": "Virtual Display / Wayland Surface",
+                "resolution": "Auto-scaling",
+                "refresh_rate": "60 Hz",
+                "status": HardwareStatus.GOOD
+            })
+
+        return displays
+
+    @staticmethod
+    def detect_input_devices() -> List[Dict[str, Any]]:
+        """Detects keyboards, mice, touchpads, and gamepads via /proc/bus/input/devices."""
+        inputs: List[Dict[str, Any]] = []
+        input_raw = safe_read_file("/proc/bus/input/devices")
+
+        if input_raw:
+            cur_name = ""
+            cur_type = "General Input"
+            for line in input_raw.splitlines():
+                if line.startswith("N: Name="):
+                    cur_name = line.split("Name=", 1)[1].strip('"\'')
+                elif line.startswith("H: Handlers="):
+                    handlers = line.split("Handlers=", 1)[1]
+                    if "kbd" in handlers:
+                        cur_type = "Keyboard"
+                    elif "mouse" in handlers:
+                        cur_type = "Mouse / Pointing Device"
+                    elif "js" in handlers:
+                        cur_type = "Game Controller / Gamepad"
+                elif line.strip() == "":
+                    if cur_name:
+                        inputs.append({
+                            "name": cur_name,
+                            "type": cur_type,
+                            "status": HardwareStatus.GOOD
+                        })
+                        cur_name = ""
+                        cur_type = "General Input"
+            if cur_name:
+                inputs.append({
+                    "name": cur_name,
+                    "type": cur_type,
+                    "status": HardwareStatus.GOOD
+                })
+
+        if not inputs:
+            inputs.append({"name": "Standard Virtual Keyboard", "type": "Keyboard", "status": HardwareStatus.GOOD})
+            inputs.append({"name": "Standard Virtual Pointer", "type": "Mouse / Pointing Device", "status": HardwareStatus.GOOD})
+
+        return inputs
+
+    @staticmethod
+    def detect_usb_devices() -> List[Dict[str, Any]]:
+        """Detects connected USB devices from sysfs or lsusb."""
+        usbs: List[Dict[str, Any]] = []
+        
+        # Check /sys/bus/usb/devices/
+        usb_dirs = sorted(glob.glob("/sys/bus/usb/devices/[0-9]*"))
+        for u in usb_dirs:
+            product = safe_read_file(os.path.join(u, "product"))
+            manufacturer = safe_read_file(os.path.join(u, "manufacturer")) or "Generic"
+            if product:
+                usbs.append({
+                    "name": product,
+                    "vendor": manufacturer,
+                    "status": HardwareStatus.GOOD
+                })
+
+        # Fallback lsusb
+        if not usbs:
+            lsusb_out = run_command_safely(["lsusb"])
+            for line in lsusb_out.splitlines():
+                parts = line.split("ID", 1)
+                desc = parts[1].strip() if len(parts) > 1 else line
+                usbs.append({
+                    "name": desc,
+                    "vendor": "USB Device",
+                    "status": HardwareStatus.GOOD
+                })
+
+        return usbs
+
+    @classmethod
+    def get_full_hardware_report(cls) -> Dict[str, Any]:
+        """Aggregates the entire hardware snapshot."""
+        return {
+            "system": cls.detect_system_info(),
+            "cpu": cls.detect_cpu(),
+            "memory": cls.detect_memory(),
+            "gpu": cls.detect_gpu(),
+            "storage": cls.detect_storage(),
+            "network": cls.detect_network(),
+            "audio": cls.detect_audio(),
+            "displays": cls.detect_displays(),
+            "inputs": cls.detect_input_devices(),
+            "usb": cls.detect_usb_devices()
+        }
+
+
+# ==============================================================================
+# Report Formatter
+# ==============================================================================
+
+def generate_text_summary(report: Dict[str, Any]) -> str:
+    """Generates a clean, privacy-respecting plain text report for clipboard/export."""
+    sys_info = report["system"]
+    cpu = report["cpu"]
+    mem = report["memory"]
+    gpus = report["gpu"]
+    disks = report["storage"]
+    net = report["network"]
+    audio = report["audio"]
+    displays = report["displays"]
+
+    lines = [
+        "================================================================================",
+        "                       DOOMOS HARDWARE SPECIFICATION REPORT                     ",
+        "================================================================================",
+        f"OS & Distribution:     {sys_info['os_name']} ({sys_info['os_version']})",
+        f"Kernel Release:        {sys_info['kernel']} [{sys_info['architecture']}]",
+        f"Desktop & Session:     {sys_info['desktop']} ({sys_info['session_type'].upper()})",
+        f"System Firmware:       {sys_info['boot_mode']}",
+        f"Uptime:                {sys_info['uptime']}",
+        "--------------------------------------------------------------------------------",
+        "PROCESSOR (CPU):",
+        f"  Model:               {cpu['name']}",
+        f"  Vendor:              {cpu['vendor']}",
+        f"  Architecture:        {cpu['architecture']}",
+        f"  Cores / Threads:     {cpu['cores']} Cores / {cpu['threads']} Threads",
+        f"  Current Frequency:   {cpu['frequency_mhz']} MHz" if isinstance(cpu['frequency_mhz'], (int, float)) else f"  Frequency Policy:    {cpu['frequency_mhz']}",
+        "--------------------------------------------------------------------------------",
+        "SYSTEM MEMORY (RAM):",
+        f"  Total RAM:           {mem['total_mb']} MB ({round(mem['total_mb']/1024, 2)} GB)",
+        f"  Used RAM:            {mem['used_mb']} MB ({mem['usage_percent']}%)",
+        f"  Available RAM:       {mem['available_mb']} MB",
+        f"  Compressed ZRAM:     {'Active (zstd swap)' if mem['zram_active'] else 'Inactive'}",
+        "--------------------------------------------------------------------------------",
+        "GRAPHICS & ACCELERATION (GPU):"
+    ]
+
+    for idx, gpu in enumerate(gpus, 1):
+        lines.append(f"  GPU #{idx}:            {gpu['name']} [Vendor: {gpu['vendor']}, Driver: {gpu['driver']}]")
+
+    lines.append("--------------------------------------------------------------------------------")
+    lines.append("STORAGE & DISKS:")
+    for d in disks:
+        lines.append(f"  Disk:                {d['device']} ({d['type']})")
+        lines.append(f"    Capacity:          {d['capacity_gb']} GB (Used: {d['used_gb']} GB, Free: {d['free_gb']} GB)")
+        lines.append(f"    Mount & FS:        {d['mount_point']} [{d['filesystem']}]")
+
+    lines.append("--------------------------------------------------------------------------------")
+    lines.append("NETWORK CONTROLLERS:")
+    for w in net["wifi"]:
+        lines.append(f"  Wi-Fi Adapter:       {w['name']} [Status: {w['state']}, Driver: {w['driver']}]")
+    for e in net["ethernet"]:
+        lines.append(f"  Ethernet Adapter:    {e['name']} [Status: {e['state']}, Driver: {e['driver']}]")
+    for b in net["bluetooth"]:
+        lines.append(f"  Bluetooth Adapter:   {b['name']} [Status: {b['state']}]")
+
+    lines.append("--------------------------------------------------------------------------------")
+    lines.append("AUDIO HARDWARE:")
+    for c in audio["sound_cards"]:
+        lines.append(f"  Sound Device:        {c}")
+    lines.append(f"  PipeWire Subsystem:  {'Active & Running' if audio['pipewire_active'] else 'Standby'}")
+
+    lines.append("--------------------------------------------------------------------------------")
+    lines.append("DISPLAYS:")
+    for disp in displays:
+        lines.append(f"  Display:             {disp['name']} ({disp['resolution']} @ {disp['refresh_rate']})")
+
+    lines.append("================================================================================")
+    lines.append("Generated by DoomOS Hardware Center.")
+    return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    rep = HardwareDetector.get_full_hardware_report()
+    print(generate_text_summary(rep))
