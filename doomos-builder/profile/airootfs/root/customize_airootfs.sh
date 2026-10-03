@@ -62,6 +62,11 @@ systemctl enable doomos-flathub-setup.service || true
 echo "==> [DoomOS Customize] Initializing Flathub repository..."
 flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
 
+# Ensure GUI browser wrapper has executable permissions
+if [[ -f /usr/local/bin/firefox ]]; then
+    chmod +x /usr/local/bin/firefox
+fi
+
 # 6. Fallback symlink for Calamares installer compatibility
 mkdir -p /run/archiso/bootmnt/arch/aarch64 /run/archiso/bootmnt/arch/x86_64
 ln -sf /run/archiso/bootmnt/doomos/aarch64/airootfs.sfs /run/archiso/bootmnt/arch/aarch64/airootfs.sfs 2>/dev/null || true
