@@ -64,6 +64,9 @@ systemctl enable doomos-flathub-setup.service || true
 echo "==> [DoomOS Customize] Initializing Flathub repository..."
 flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
 
+# Pre-configure Flatpak Firefox sandbox environment to prevent Wayland VM crash
+flatpak override --system --env=MOZ_ENABLE_WAYLAND=0 org.mozilla.firefox 2>/dev/null || true
+
 # Ensure GUI browser wrapper has executable permissions
 if [[ -f /usr/local/bin/firefox ]]; then
     chmod +x /usr/local/bin/firefox

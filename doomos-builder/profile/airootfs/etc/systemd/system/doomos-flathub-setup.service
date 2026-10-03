@@ -7,6 +7,7 @@ ConditionPathExists=/usr/bin/flatpak
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+ExecStartPost=-/usr/bin/flatpak override --system --env=MOZ_ENABLE_WAYLAND=0 org.mozilla.firefox
 RemainAfterExit=yes
 StandardOutput=journal
 StandardError=journal
