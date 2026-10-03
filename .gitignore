@@ -5,3 +5,4 @@ doomos-builder/output/*.iso
 * 2.sh
 *.vmwarevm/
 .DS_Store
+*(*)*
