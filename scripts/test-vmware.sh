@@ -107,9 +107,9 @@ ethernet0.connectionType = "nat"
 ethernet0.virtualDev = "vmxnet3"
 ethernet0.wakeOnPdc = "TRUE"
 
-# USB 3.1 Controller
-usb.present = "TRUE"
-ehci.present = "TRUE"
+# USB 3.0 / 3.1 Modern XHCI Controller (Eliminates legacy UHCI probe errors on Apple Silicon)
+usb.present = "FALSE"
+ehci.present = "FALSE"
 usb_xhci.present = "TRUE"
 
 # VMware Tools & Shared Folders
