@@ -112,6 +112,8 @@ dolphin
 konsole
 kate
 plasma-systemmonitor
+flatpak
+archlinux-appstream-data
 eza
 bat
 starship

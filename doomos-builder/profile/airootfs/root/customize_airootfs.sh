@@ -56,6 +56,7 @@ systemctl enable vmtoolsd.service || true
 systemctl enable vmware-vmblock-fuse.service || true
 mkdir -p /mnt/hgfs
 systemctl enable mnt-hgfs.mount || true
+systemctl enable doomos-flathub-setup.service || true
 
 # 6. Fallback symlink for Calamares installer compatibility
 mkdir -p /run/archiso/bootmnt/arch/aarch64 /run/archiso/bootmnt/arch/x86_64

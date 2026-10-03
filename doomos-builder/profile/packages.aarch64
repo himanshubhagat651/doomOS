@@ -81,11 +81,23 @@ pipewire
 wireplumber
 pipewire-pulse
 pipewire-alsa
+libspa-0.2-bluetooth
 
 # ------------------------------------------------------------------------------
 # 8. Power Management
 # ------------------------------------------------------------------------------
 power-profiles-daemon
+
+# ------------------------------------------------------------------------------
+# 8b. Gaming Hardware & Universal Multimedia Codecs
+# ------------------------------------------------------------------------------
+game-devices-udev
+gamemode
+ffmpeg
+gst-plugins-good
+gst-plugins-bad
+gst-plugins-ugly
+gst-libav
 
 # ------------------------------------------------------------------------------
 # 9. KDE Plasma 6 Desktop Suite (Native Wayland Session)
@@ -97,6 +109,8 @@ dolphin
 konsole
 kate
 plasma-systemmonitor
+flatpak
+archlinux-appstream-data
 
 # ------------------------------------------------------------------------------
 # 10. Developer Utilities & Terminal Enhancements
