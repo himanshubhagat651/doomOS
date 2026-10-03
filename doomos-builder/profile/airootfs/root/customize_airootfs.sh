@@ -58,6 +58,10 @@ mkdir -p /mnt/hgfs
 systemctl enable mnt-hgfs.mount || true
 systemctl enable doomos-flathub-setup.service || true
 
+# Configure Flathub as the default app repository
+echo "==> [DoomOS Customize] Initializing Flathub repository..."
+flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
+
 # 6. Fallback symlink for Calamares installer compatibility
 mkdir -p /run/archiso/bootmnt/arch/aarch64 /run/archiso/bootmnt/arch/x86_64
 ln -sf /run/archiso/bootmnt/doomos/aarch64/airootfs.sfs /run/archiso/bootmnt/arch/aarch64/airootfs.sfs 2>/dev/null || true
