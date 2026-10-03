@@ -6,3 +6,4 @@ doomos-builder/output/*.iso
 *.vmwarevm/
 .DS_Store
 *(*)*
+pdf for project*/

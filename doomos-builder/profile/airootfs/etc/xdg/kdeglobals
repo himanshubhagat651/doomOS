@@ -1,0 +1,10 @@
+[General]
+ColorScheme=DoomOSGreen
+AccentColor=22,163,74
+LastUsedCustomAccentColor=22,163,74
+
+[KDE]
+colorScheme=DoomOSGreen
+
+[Icons]
+Theme=breeze-dark

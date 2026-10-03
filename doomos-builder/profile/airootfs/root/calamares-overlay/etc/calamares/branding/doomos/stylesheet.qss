@@ -15,7 +15,7 @@ QDialog {
 }
 
 QPushButton {
-    background-color: #0284c7;
+    background-color: #16a34a;
     color: #ffffff;
     border: none;
     border-radius: 6px;
@@ -24,11 +24,11 @@ QPushButton {
 }
 
 QPushButton:hover {
-    background-color: #0369a1;
+    background-color: #15803d;
 }
 
 QPushButton:pressed {
-    background-color: #075985;
+    background-color: #166534;
 }
 
 QPushButton:disabled {
@@ -40,7 +40,7 @@ QTreeView, QListView, QTableView {
     background-color: #1e293b;
     border: 1px solid #334155;
     border-radius: 6px;
-    selection-background-color: #0284c7;
+    selection-background-color: #16a34a;
     selection-color: #ffffff;
 }
 
@@ -53,6 +53,6 @@ QProgressBar {
 }
 
 QProgressBar::chunk {
-    background-color: #0284c7;
+    background-color: #16a34a;
     border-radius: 3px;
 }
