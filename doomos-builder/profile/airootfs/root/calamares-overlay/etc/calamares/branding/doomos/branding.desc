@@ -28,7 +28,7 @@ images:
 style:
     SidebarBackground: "#0f172a"
     SidebarText: "#f8fafc"
-    SidebarTextHighlight: "#16a34a"
+    SidebarTextHighlight: "#0284c7"
     SidebarSelect: "#1e293b"
     SidebarIconSize: 24px
 

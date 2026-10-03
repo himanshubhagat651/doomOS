@@ -37,21 +37,6 @@ echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/10-wheel
 echo "liveuser ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/20-liveuser
 chmod 0440 /etc/sudoers.d/*
 
-# Deploy Doctor Doom Green configurations to liveuser
-if [[ -d "/etc/skel" ]]; then
-    cp -rf /etc/skel/. /home/liveuser/
-    chown -R liveuser:liveuser /home/liveuser
-fi
-
-# Override default Breeze/Next wallpapers with Doctor Doom Emerald wallpaper
-if [[ -f "/usr/share/wallpapers/DoomOS/contents/images/3840x2160.jpg" ]]; then
-    mkdir -p /usr/share/wallpapers/Next/contents/images /usr/share/wallpapers/Breeze/contents/images
-    cp -f /usr/share/wallpapers/DoomOS/contents/images/3840x2160.jpg /usr/share/wallpapers/Next/contents/images/3840x2160.jpg 2>/dev/null || true
-    cp -f /usr/share/wallpapers/DoomOS/contents/images/3840x2160.jpg /usr/share/wallpapers/Next/contents/images/1920x1080.jpg 2>/dev/null || true
-    cp -f /usr/share/wallpapers/DoomOS/contents/images/3840x2160.jpg /usr/share/wallpapers/Breeze/contents/images/3840x2160.jpg 2>/dev/null || true
-    cp -f /usr/share/wallpapers/DoomOS/contents/images/3840x2160.jpg /usr/share/wallpapers/Breeze/contents/images/1920x1080.jpg 2>/dev/null || true
-fi
-
 # 4. Configure Locales & Timezone
 echo "==> [DoomOS Customize] Generating UTF-8 locales..."
 ln -sf /usr/share/zoneinfo/UTC /etc/localtime
