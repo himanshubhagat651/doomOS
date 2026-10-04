@@ -68,6 +68,9 @@ flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.f
 flatpak override --system --env=MOZ_ENABLE_WAYLAND=0 org.mozilla.firefox 2>/dev/null || true
 
 # Ensure GUI browser wrapper has executable permissions
+if [[ -f /usr/bin/doomos-firefox ]]; then
+    chmod +x /usr/bin/doomos-firefox
+fi
 if [[ -f /usr/local/bin/firefox ]]; then
     chmod +x /usr/local/bin/firefox
 fi

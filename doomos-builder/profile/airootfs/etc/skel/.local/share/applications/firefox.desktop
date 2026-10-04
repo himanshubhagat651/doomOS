@@ -4,7 +4,7 @@ Name=Firefox Web Browser
 Comment=Browse the World Wide Web
 GenericName=Web Browser
 Keywords=Internet;WWW;Browser;Web;Explorer
-Exec=env MOZ_ENABLE_WAYLAND=0 /usr/bin/firefox %u
+Exec=/usr/bin/doomos-firefox %u
 Terminal=false
 X-MultipleArgs=false
 Type=Application
@@ -16,8 +16,8 @@ Actions=new-window;new-private-window;
 
 [Desktop Action new-window]
 Name=Open a New Window
-Exec=env MOZ_ENABLE_WAYLAND=0 /usr/bin/firefox -new-window
+Exec=/usr/bin/doomos-firefox -new-window
 
 [Desktop Action new-private-window]
 Name=Open a New Private Window
-Exec=env MOZ_ENABLE_WAYLAND=0 /usr/bin/firefox -private-window
+Exec=/usr/bin/doomos-firefox -private-window

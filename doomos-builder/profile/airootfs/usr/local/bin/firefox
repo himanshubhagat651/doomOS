@@ -1,4 +1,4 @@
 #!/bin/sh
-# DoomOS Virtual Machine & Wayland Compatibility Wrapper for Firefox
-export MOZ_ENABLE_WAYLAND=0
-exec /usr/bin/firefox "$@"
+# DoomOS System-wide Firefox Interceptor
+# Automatically calls the environment-aware launcher /usr/bin/doomos-firefox
+exec /usr/bin/doomos-firefox "$@"
