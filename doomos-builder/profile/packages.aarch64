@@ -100,6 +100,7 @@ plasma-systemmonitor
 flatpak
 archlinux-appstream-data
 tk
+firefox
 
 # ------------------------------------------------------------------------------
 # 10. Developer Utilities & Terminal Enhancements
