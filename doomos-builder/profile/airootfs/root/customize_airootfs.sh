@@ -75,6 +75,12 @@ if [[ -f /usr/local/bin/firefox ]]; then
     chmod +x /usr/local/bin/firefox
 fi
 
+# Point system-installed Firefox desktop entry to DoomOS smart launcher
+if [[ -f /usr/share/applications/firefox.desktop ]]; then
+    sed -i 's|^Exec=/usr/bin/firefox|Exec=/usr/bin/doomos-firefox|g' /usr/share/applications/firefox.desktop
+    sed -i 's|^Exec=firefox|Exec=/usr/bin/doomos-firefox|g' /usr/share/applications/firefox.desktop
+fi
+
 # 6. Fallback symlink for Calamares installer compatibility
 mkdir -p /run/archiso/bootmnt/arch/aarch64 /run/archiso/bootmnt/arch/x86_64
 ln -sf /run/archiso/bootmnt/doomos/aarch64/airootfs.sfs /run/archiso/bootmnt/arch/aarch64/airootfs.sfs 2>/dev/null || true
