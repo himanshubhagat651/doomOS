@@ -1,0 +1,586 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+DoomOS Graphical System Installer (GUI Wizard)
+================================================================================
+KDE Plasma 6 & Wayland Native Graphical Installer for DoomOS.
+Flow:
+  1. Welcome Screen (Try DoomOS vs Install DoomOS)
+  2. System Hardware & Architecture Safety Audit
+  3. Installation Disk Selection & Destruction Warning
+  4. Btrfs & Subvolume Storage Layout Overview
+  5. User Account Setup (Full Name, Username, Passwords)
+  6. Localization & Timezone Selection
+  7. Installation Summary & Explicit Confirmation Gate
+  8. Step-by-Step Installation Progress Engine
+  9. Completion Screen (Reboot / Continue Testing)
+================================================================================
+"""
+
+import os
+import sys
+import threading
+import tkinter as tk
+from tkinter import ttk, messagebox
+from typing import Dict, List, Any
+
+# Dynamic import of doomos-installer-engine
+try:
+    from doomos_installer_engine import SystemCompatibility, DiskManager, InstallationEngine, log_message, INSTALLER_LOG_PATH
+except Exception:
+    import importlib.machinery
+    import importlib.util
+    engine_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "doomos-installer-engine")
+    if not os.path.exists(engine_path):
+        engine_path = "/usr/bin/doomos-installer-engine"
+    loader = importlib.machinery.SourceFileLoader("doomos_installer_engine", engine_path)
+    spec = importlib.util.spec_from_loader("doomos_installer_engine", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    SystemCompatibility = mod.SystemCompatibility
+    DiskManager = mod.DiskManager
+    InstallationEngine = mod.InstallationEngine
+    log_message = mod.log_message
+    INSTALLER_LOG_PATH = mod.INSTALLER_LOG_PATH
+
+# Theme Palette (Matches KDE Plasma Dark / DoomOS Green aesthetic)
+COLOR_BG_DARK = "#181a1f"
+COLOR_SIDEBAR = "#21252b"
+COLOR_CARD = "#282c34"
+COLOR_CARD_BORDER = "#3b4048"
+COLOR_TEXT_MAIN = "#abb2bf"
+COLOR_TEXT_HEAD = "#ffffff"
+COLOR_TEXT_MUTED = "#5c6370"
+COLOR_ACCENT = "#98c379"  # DoomOS signature emerald green
+COLOR_ACCENT_HOVER = "#a8d389"
+COLOR_GOOD = "#98c379"
+COLOR_WARN = "#e5c07b"
+COLOR_ERROR = "#e06c75"
+COLOR_INFO = "#61afef"
+
+
+class DoomOSInstaller(tk.Tk):
+    def __init__(self):
+        super().__init__()
+
+        self.title("Install DoomOS — System Setup Wizard")
+        self.geometry("920x640")
+        self.minsize(860, 580)
+        self.configure(bg=COLOR_BG_DARK)
+
+        # Installation State Model
+        self.compat_info = SystemCompatibility.detect_environment()
+        self.disks = DiskManager.list_target_disks()
+        self.selected_disk = tk.StringVar(value=self.disks[0]["device"] if self.disks else "")
+        self.fullname_var = tk.StringVar(value="DoomOS User")
+        self.username_var = tk.StringVar(value="doomos")
+        self.password_var = tk.StringVar(value="")
+        self.confirm_pwd_var = tk.StringVar(value="")
+        self.hostname_var = tk.StringVar(value="doomos-desktop")
+        self.timezone_var = tk.StringVar(value="UTC")
+        self.autologin_var = tk.BooleanVar(value=True)
+
+        self.current_step = 0
+        self.steps = [
+            ("Welcome", self.render_welcome_step),
+            ("Hardware Check", self.render_hardware_step),
+            ("Select Disk", self.render_disk_step),
+            ("User Account", self.render_user_step),
+            ("Summary", self.render_summary_step),
+            ("Installing", self.render_progress_step),
+            ("Complete", self.render_finish_step),
+        ]
+
+        self.setup_ui_shell()
+        self.show_step(0)
+
+    def setup_ui_shell(self):
+        """Top Header, Left Step Navigation, and Main Content Area."""
+        # Top Header
+        self.header_frame = tk.Frame(self, bg=COLOR_SIDEBAR, height=60, padx=20, pady=10)
+        self.header_frame.pack(side="top", fill="x")
+
+        title_lbl = tk.Label(
+            self.header_frame,
+            text="DoomOS Installer",
+            font=("sans-serif", 15, "bold"),
+            fg=COLOR_TEXT_HEAD,
+            bg=COLOR_SIDEBAR
+        )
+        title_lbl.pack(side="left")
+
+        ver_lbl = tk.Label(
+            self.header_frame,
+            text="Version 1.1.0 • ARM64 / Apple Silicon Edition",
+            font=("sans-serif", 10),
+            fg=COLOR_ACCENT,
+            bg=COLOR_SIDEBAR
+        )
+        ver_lbl.pack(side="left", padx=(15, 0))
+
+        # Main Body Splitter
+        self.body_frame = tk.Frame(self, bg=COLOR_BG_DARK)
+        self.body_frame.pack(side="top", fill="both", expand=True)
+
+        # Left Sidebar Steps
+        self.sidebar_frame = tk.Frame(self.body_frame, bg=COLOR_SIDEBAR, width=220, padx=15, pady=20)
+        self.sidebar_frame.pack(side="left", fill="y")
+        self.sidebar_frame.pack_propagate(False)
+
+        side_title = tk.Label(self.sidebar_frame, text="STEPS", font=("sans-serif", 9, "bold"), fg=COLOR_TEXT_MUTED, bg=COLOR_SIDEBAR)
+        side_title.pack(anchor="w", pady=(0, 10))
+
+        self.step_labels = []
+        for idx, (name, _) in enumerate(self.steps):
+            lbl = tk.Label(
+                self.sidebar_frame,
+                text=f"{idx + 1}.  {name}",
+                font=("sans-serif", 10),
+                fg=COLOR_TEXT_MUTED,
+                bg=COLOR_SIDEBAR,
+                anchor="w",
+                pady=6
+            )
+            lbl.pack(fill="x")
+            self.step_labels.append(lbl)
+
+        # Right Content Container
+        self.content_frame = tk.Frame(self.body_frame, bg=COLOR_BG_DARK, padx=30, pady=20)
+        self.content_frame.pack(side="right", fill="both", expand=True)
+
+        # Bottom Button Bar
+        self.bottom_bar = tk.Frame(self, bg=COLOR_SIDEBAR, height=55, padx=20, pady=10)
+        self.bottom_bar.pack(side="bottom", fill="x")
+
+        self.btn_cancel = tk.Button(
+            self.bottom_bar,
+            text="Cancel",
+            font=("sans-serif", 10),
+            bg=COLOR_CARD,
+            fg=COLOR_TEXT_MAIN,
+            activebackground=COLOR_CARD_BORDER,
+            relief="flat",
+            padx=15,
+            pady=4,
+            command=self.on_cancel
+        )
+        self.btn_cancel.pack(side="left")
+
+        self.btn_next = tk.Button(
+            self.bottom_bar,
+            text="Next >",
+            font=("sans-serif", 10, "bold"),
+            bg=COLOR_ACCENT,
+            fg="#000000",
+            activebackground=COLOR_ACCENT_HOVER,
+            relief="flat",
+            padx=20,
+            pady=4,
+            command=self.on_next
+        )
+        self.btn_next.pack(side="right")
+
+        self.btn_back = tk.Button(
+            self.bottom_bar,
+            text="< Back",
+            font=("sans-serif", 10),
+            bg=COLOR_CARD,
+            fg=COLOR_TEXT_MAIN,
+            activebackground=COLOR_CARD_BORDER,
+            relief="flat",
+            padx=15,
+            pady=4,
+            command=self.on_back
+        )
+        self.btn_back.pack(side="right", padx=(0, 10))
+
+    def update_sidebar_indicators(self):
+        for idx, lbl in enumerate(self.step_labels):
+            if idx == self.current_step:
+                lbl.configure(fg=COLOR_ACCENT, font=("sans-serif", 10, "bold"))
+            elif idx < self.current_step:
+                lbl.configure(fg=COLOR_TEXT_MAIN, font=("sans-serif", 10))
+            else:
+                lbl.configure(fg=COLOR_TEXT_MUTED, font=("sans-serif", 10))
+
+    def clear_content(self):
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+
+    def show_step(self, step_idx: int):
+        self.current_step = step_idx
+        self.update_sidebar_indicators()
+        self.clear_content()
+
+        # Update button states
+        self.btn_back.configure(state="normal" if (0 < step_idx < 5) else "disabled")
+        if step_idx == 0:
+            self.btn_next.configure(text="Install DoomOS")
+        elif step_idx == 4:
+            self.btn_next.configure(text="Confirm & Install")
+        elif step_idx >= 5:
+            self.btn_back.configure(state="disabled")
+            self.btn_cancel.configure(state="disabled")
+            self.btn_next.configure(state="disabled")
+        else:
+            self.btn_next.configure(text="Next >", state="normal")
+
+        # Invoke view handler
+        self.steps[step_idx][1]()
+
+    # --------------------------------------------------------------------------
+    # STEP 1: WELCOME
+    # --------------------------------------------------------------------------
+    def render_welcome_step(self):
+        title = tk.Label(self.content_frame, text="Welcome to DoomOS", font=("sans-serif", 18, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 8))
+
+        sub = tk.Label(
+            self.content_frame,
+            text="You are currently running DoomOS in Live Preview mode.\n"
+                 "You can continue exploring the live desktop without making any modifications to your storage,\n"
+                 "or proceed with installing DoomOS onto a supported drive or virtual machine.",
+            font=("sans-serif", 11),
+            fg=COLOR_TEXT_MAIN,
+            bg=COLOR_BG_DARK,
+            justify="left"
+        )
+        sub.pack(anchor="w", pady=(0, 25))
+
+        card = tk.Frame(self.content_frame, bg=COLOR_CARD, padx=20, pady=20, highlightbackground=COLOR_CARD_BORDER, highlightthickness=1)
+        card.pack(fill="x", pady=(0, 20))
+
+        feat_title = tk.Label(card, text="DoomOS Highlights", font=("sans-serif", 12, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_CARD)
+        feat_title.pack(anchor="w", pady=(0, 10))
+
+        features = [
+            "• Optimized for Apple Silicon ARM64 & VMware Hypervisor acceleration",
+            "• High-fidelity KDE Plasma 6 desktop on native Wayland",
+            "• Robust Btrfs filesystem layout with automatic Snapper rollback protection",
+            "• Pro-audio PipeWire low-latency infrastructure",
+            "• Hardware Center & System diagnostic tooling integrated"
+        ]
+        for f in features:
+            tk.Label(card, text=f, font=("sans-serif", 10), fg=COLOR_TEXT_MAIN, bg=COLOR_CARD).pack(anchor="w", pady=2)
+
+        # Quick "Try DoomOS" action button
+        btn_try = tk.Button(
+            self.content_frame,
+            text="Try DoomOS (Exit Installer)",
+            font=("sans-serif", 10),
+            bg=COLOR_CARD,
+            fg=COLOR_TEXT_HEAD,
+            activebackground=COLOR_CARD_BORDER,
+            relief="flat",
+            padx=15,
+            pady=8,
+            command=self.destroy
+        )
+        btn_try.pack(anchor="w")
+
+    # --------------------------------------------------------------------------
+    # STEP 2: HARDWARE COMPATIBILITY CHECK
+    # --------------------------------------------------------------------------
+    def render_hardware_step(self):
+        title = tk.Label(self.content_frame, text="System Hardware & Compatibility Check", font=("sans-serif", 16, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 8))
+
+        card = tk.Frame(self.content_frame, bg=COLOR_CARD, padx=20, pady=15, highlightbackground=COLOR_CARD_BORDER, highlightthickness=1)
+        card.pack(fill="x", pady=(0, 20))
+
+        c = self.compat_info
+
+        items = [
+            ("CPU Architecture", f"{c['architecture'].upper()}", c["architecture_supported"]),
+            ("Boot Environment", "UEFI 64-bit", c["uefi_supported"]),
+            ("System Memory", f"{c['ram_gb']} GB RAM", c["ram_supported"]),
+            ("Virtual Environment", f"{c['vm_vendor']}", True),
+        ]
+
+        for label, val, is_ok in items:
+            row = tk.Frame(card, bg=COLOR_CARD, pady=4)
+            row.pack(fill="x")
+            tk.Label(row, text=label, font=("sans-serif", 10, "bold"), fg=COLOR_TEXT_MAIN, bg=COLOR_CARD, width=22, anchor="w").pack(side="left")
+            tk.Label(row, text=val, font=("sans-serif", 10), fg=COLOR_TEXT_HEAD, bg=COLOR_CARD).pack(side="left")
+            status_text = "✓ Supported" if is_ok else "✗ Warning"
+            status_color = COLOR_GOOD if is_ok else COLOR_WARN
+            tk.Label(row, text=status_text, font=("sans-serif", 10, "bold"), fg=status_color, bg=COLOR_CARD).pack(side="right")
+
+        # Safety Guard Notification for Apple Silicon Bare-Metal
+        if c.get("is_apple_silicon_bare_metal"):
+            warn_card = tk.Frame(self.content_frame, bg="#2d1c1c", padx=15, pady=12, highlightbackground=COLOR_ERROR, highlightthickness=1)
+            warn_card.pack(fill="x")
+            tk.Label(warn_card, text="⚠ APPLE SILICON SAFETY GUARD ACTIVE", font=("sans-serif", 11, "bold"), fg=COLOR_ERROR, bg="#2d1c1c").pack(anchor="w", pady=(0, 4))
+            tk.Label(warn_card, text=c["apple_silicon_safety_note"], font=("sans-serif", 9), fg=COLOR_TEXT_HEAD, bg="#2d1c1c", justify="left").pack(anchor="w")
+
+    # --------------------------------------------------------------------------
+    # STEP 3: DISK SELECTION
+    # --------------------------------------------------------------------------
+    def render_disk_step(self):
+        title = tk.Label(self.content_frame, text="Choose Installation Disk", font=("sans-serif", 16, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 8))
+
+        warn_box = tk.Frame(self.content_frame, bg="#332b17", padx=15, pady=10, highlightbackground=COLOR_WARN, highlightthickness=1)
+        warn_box.pack(fill="x", pady=(0, 15))
+        tk.Label(warn_box, text="⚠ ATTENTION: Destructive Storage Operation", font=("sans-serif", 10, "bold"), fg=COLOR_WARN, bg="#332b17").pack(anchor="w")
+        tk.Label(
+            warn_box,
+            text="Installing DoomOS will format the target drive with GPT and Btrfs subvolumes (@, @home, @snapshots, @var_log).\n"
+                 "Ensure all critical personal data on the chosen drive is backed up before proceeding.",
+            font=("sans-serif", 9),
+            fg=COLOR_TEXT_HEAD,
+            bg="#332b17",
+            justify="left"
+        ).pack(anchor="w", pady=(2, 0))
+
+        if not self.disks:
+            tk.Label(self.content_frame, text="No target installation storage detected.", font=("sans-serif", 11), fg=COLOR_ERROR, bg=COLOR_BG_DARK).pack(pady=20)
+            return
+
+        card = tk.Frame(self.content_frame, bg=COLOR_CARD, padx=20, pady=15, highlightbackground=COLOR_CARD_BORDER, highlightthickness=1)
+        card.pack(fill="x")
+
+        for d in self.disks:
+            rb = tk.Radiobutton(
+                card,
+                text=d["display_name"],
+                value=d["device"],
+                variable=self.selected_disk,
+                font=("sans-serif", 10, "bold"),
+                fg=COLOR_TEXT_HEAD,
+                bg=COLOR_CARD,
+                selectcolor=COLOR_SIDEBAR,
+                activebackground=COLOR_CARD,
+                anchor="w",
+                pady=6
+            )
+            rb.pack(fill="x")
+
+    # --------------------------------------------------------------------------
+    # STEP 4: USER ACCOUNT SETUP
+    # --------------------------------------------------------------------------
+    def render_user_step(self):
+        title = tk.Label(self.content_frame, text="Configure User Account & Credentials", font=("sans-serif", 16, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 15))
+
+        card = tk.Frame(self.content_frame, bg=COLOR_CARD, padx=20, pady=15, highlightbackground=COLOR_CARD_BORDER, highlightthickness=1)
+        card.pack(fill="x")
+
+        fields = [
+            ("Your Name:", self.fullname_var, False),
+            ("Username:", self.username_var, False),
+            ("Device Hostname:", self.hostname_var, False),
+            ("Password:", self.password_var, True),
+            ("Confirm Password:", self.confirm_pwd_var, True),
+        ]
+
+        for lbl, var, is_pwd in fields:
+            row = tk.Frame(card, bg=COLOR_CARD, pady=5)
+            row.pack(fill="x")
+            tk.Label(row, text=lbl, font=("sans-serif", 10), fg=COLOR_TEXT_MAIN, bg=COLOR_CARD, width=18, anchor="w").pack(side="left")
+            entry = tk.Entry(row, textvariable=var, font=("sans-serif", 10), bg=COLOR_SIDEBAR, fg=COLOR_TEXT_HEAD, insertbackground=COLOR_ACCENT, relief="flat", width=28)
+            if is_pwd:
+                entry.configure(show="•")
+            entry.pack(side="left", padx=5, ipady=3)
+
+        row_cb = tk.Frame(card, bg=COLOR_CARD, pady=8)
+        row_cb.pack(fill="x")
+        tk.Checkbutton(
+            row_cb,
+            text="Log in automatically on startup without asking for password",
+            variable=self.autologin_var,
+            font=("sans-serif", 10),
+            fg=COLOR_TEXT_HEAD,
+            bg=COLOR_CARD,
+            selectcolor=COLOR_SIDEBAR,
+            activebackground=COLOR_CARD
+        ).pack(side="left")
+
+    # --------------------------------------------------------------------------
+    # STEP 5: INSTALLATION SUMMARY & CONFIRMATION
+    # --------------------------------------------------------------------------
+    def render_summary_step(self):
+        title = tk.Label(self.content_frame, text="Installation Summary", font=("sans-serif", 16, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 8))
+
+        card = tk.Frame(self.content_frame, bg=COLOR_CARD, padx=20, pady=15, highlightbackground=COLOR_CARD_BORDER, highlightthickness=1)
+        card.pack(fill="x", pady=(0, 15))
+
+        summary_rows = [
+            ("Target Architecture:", self.compat_info["architecture"].upper()),
+            ("Target Drive:", self.selected_disk.get()),
+            ("Partition Table:", "GPT (GUID Partition Table)"),
+            ("Filesystem Scheme:", "Btrfs with Subvolumes (@, @home, @snapshots, @var_log)"),
+            ("Compression:", "Zstandard (zstd:3)"),
+            ("Username:", self.username_var.get()),
+            ("Device Hostname:", self.hostname_var.get()),
+            ("Timezone:", self.timezone_var.get()),
+            ("Bootloader:", "GRUB UEFI (ARM64)"),
+        ]
+
+        for lbl, val in summary_rows:
+            row = tk.Frame(card, bg=COLOR_CARD, pady=3)
+            row.pack(fill="x")
+            tk.Label(row, text=lbl, font=("sans-serif", 10, "bold"), fg=COLOR_TEXT_MAIN, bg=COLOR_CARD, width=22, anchor="w").pack(side="left")
+            tk.Label(row, text=val, font=("sans-serif", 10), fg=COLOR_TEXT_HEAD, bg=COLOR_CARD).pack(side="left")
+
+        note = tk.Label(
+            self.content_frame,
+            text="Clicking 'Confirm & Install' below will execute the installation steps.\n"
+                 "Please confirm that you have chosen the intended storage device.",
+            font=("sans-serif", 10),
+            fg=COLOR_TEXT_MAIN,
+            bg=COLOR_BG_DARK,
+            justify="left"
+        )
+        note.pack(anchor="w")
+
+    # --------------------------------------------------------------------------
+    # STEP 6: INSTALLATION PROGRESS
+    # --------------------------------------------------------------------------
+    def render_progress_step(self):
+        title = tk.Label(self.content_frame, text="Installing DoomOS...", font=("sans-serif", 16, "bold"), fg=COLOR_TEXT_HEAD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 15))
+
+        self.progress_lbl = tk.Label(self.content_frame, text="Starting installation engine...", font=("sans-serif", 11), fg=COLOR_TEXT_MAIN, bg=COLOR_BG_DARK)
+        self.progress_lbl.pack(anchor="w", pady=(0, 10))
+
+        self.progress_bar = ttk.Progressbar(self.content_frame, mode="determinate", length=600)
+        self.progress_bar.pack(fill="x", pady=(0, 20))
+
+        self.log_box = tk.Text(self.content_frame, height=12, bg=COLOR_CARD, fg=COLOR_TEXT_MAIN, font=("monospace", 9), relief="flat", padx=10, pady=10)
+        self.log_box.pack(fill="both", expand=True)
+
+        # Trigger Worker Thread
+        thread = threading.Thread(target=self.run_installation_worker, daemon=True)
+        thread.start()
+
+    def run_installation_worker(self):
+        def cb(status_text: str, percentage: int):
+            self.after(0, lambda: self.update_progress(status_text, percentage))
+
+        # Check if dry_run
+        dry_run = (os.geteuid() != 0)
+        success, msg = InstallationEngine.execute_installation(
+            target_disk=self.selected_disk.get(),
+            username=self.username_var.get(),
+            password=self.password_var.get(),
+            hostname=self.hostname_var.get(),
+            timezone=self.timezone_var.get(),
+            progress_callback=cb,
+            dry_run=dry_run
+        )
+
+        self.after(0, lambda: self.finish_installation(success, msg))
+
+    def update_progress(self, status: str, pct: int):
+        self.progress_lbl.configure(text=status)
+        self.progress_bar["value"] = pct
+        self.log_box.insert("end", f"✓ {status}\n")
+        self.log_box.see("end")
+
+    def finish_installation(self, success: bool, message: str):
+        if success:
+            self.show_step(6)
+        else:
+            messagebox.showerror("Installation Halted", message)
+            self.btn_cancel.configure(state="normal", text="Close")
+
+    # --------------------------------------------------------------------------
+    # STEP 7: COMPLETION
+    # --------------------------------------------------------------------------
+    def render_finish_step(self):
+        title = tk.Label(self.content_frame, text="Installation Complete!", font=("sans-serif", 18, "bold"), fg=COLOR_GOOD, bg=COLOR_BG_DARK)
+        title.pack(anchor="w", pady=(0, 10))
+
+        msg = tk.Label(
+            self.content_frame,
+            text="DoomOS has been successfully installed on your selected storage device.\n\n"
+                 "You can restart your computer to boot directly into your new DoomOS environment,\n"
+                 "or continue exploring the Live Preview desktop.",
+            font=("sans-serif", 11),
+            fg=COLOR_TEXT_MAIN,
+            bg=COLOR_BG_DARK,
+            justify="left"
+        )
+        msg.pack(anchor="w", pady=(0, 25))
+
+        btn_box = tk.Frame(self.content_frame, bg=COLOR_BG_DARK)
+        btn_box.pack(anchor="w")
+
+        btn_restart = tk.Button(
+            btn_box,
+            text="Restart Now",
+            font=("sans-serif", 10, "bold"),
+            bg=COLOR_ACCENT,
+            fg="#000000",
+            relief="flat",
+            padx=18,
+            pady=8,
+            command=self.on_restart
+        )
+        btn_restart.pack(side="left", padx=(0, 12))
+
+        btn_continue = tk.Button(
+            btn_box,
+            text="Continue Testing Live Preview",
+            font=("sans-serif", 10),
+            bg=COLOR_CARD,
+            fg=COLOR_TEXT_HEAD,
+            relief="flat",
+            padx=18,
+            pady=8,
+            command=self.destroy
+        )
+        btn_continue.pack(side="left")
+
+    # --------------------------------------------------------------------------
+    # Navigation Actions
+    # --------------------------------------------------------------------------
+    def on_next(self):
+        if self.current_step == 3:  # Validating User Info
+            if not self.username_var.get().strip():
+                messagebox.showwarning("Validation Error", "Please provide a valid username.")
+                return
+            if not self.password_var.get():
+                messagebox.showwarning("Validation Error", "Password cannot be empty.")
+                return
+            if self.password_var.get() != self.confirm_pwd_var.get():
+                messagebox.showwarning("Validation Error", "Passwords do not match. Please re-enter.")
+                return
+
+        if self.current_step == 4:  # Summary to Install
+            confirmed = messagebox.askyesno(
+                "Confirm Storage Formatting",
+                f"Are you sure you want to install DoomOS to {self.selected_disk.get()}?\n\n"
+                "All existing data on this partition/drive may be erased.",
+                icon="warning"
+            )
+            if not confirmed:
+                return
+
+        if self.current_step < len(self.steps) - 1:
+            self.show_step(self.current_step + 1)
+
+    def on_back(self):
+        if self.current_step > 0:
+            self.show_step(self.current_step - 1)
+
+    def on_cancel(self):
+        if messagebox.askyesno("Exit Installer", "Do you wish to exit the DoomOS Installer and return to the desktop?"):
+            self.destroy()
+
+    def on_restart(self):
+        if os.geteuid() == 0 and os.path.exists("/usr/bin/systemctl"):
+            os.system("systemctl reboot")
+        else:
+            self.destroy()
+
+
+def main():
+    app = DoomOSInstaller()
+    app.mainloop()
+
+
+if __name__ == "__main__":
+    main()

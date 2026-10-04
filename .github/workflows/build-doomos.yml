@@ -71,6 +71,14 @@ jobs:
         run: |
           ./tests/test-phase4-phase5-boot.sh
 
+      - name: 11b. Execute Step 2 Hardware Center Acceptance Tests
+        run: |
+          ./tests/test-step2-hardware-center.sh
+
+      - name: 11c. Execute Step 3 Live Installer Acceptance Tests
+        run: |
+          ./tests/test-doomos-installer.sh
+
       - name: 12. Execute Combine & Multipart Reassembly Unit Tests
         run: |
           ./tests/test-combine.sh

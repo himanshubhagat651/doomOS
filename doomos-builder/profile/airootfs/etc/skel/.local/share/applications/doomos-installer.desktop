@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Install DoomOS
+GenericName=DoomOS System Installer
+Comment=Install DoomOS onto your computer or virtual machine
+Exec=/usr/bin/doomos-installer
+Icon=system-software-install
+Terminal=false
+Categories=System;Settings;PackageManager;
+Keywords=install;installer;setup;os;doomos;disk;partition;
+StartupNotify=true

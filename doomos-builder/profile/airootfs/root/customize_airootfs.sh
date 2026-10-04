@@ -67,12 +67,26 @@ flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.f
 # Pre-configure Flatpak Firefox sandbox environment to prevent Wayland VM crash
 flatpak override --system --env=MOZ_ENABLE_WAYLAND=0 org.mozilla.firefox 2>/dev/null || true
 
-# Ensure GUI browser wrapper has executable permissions
+# Ensure GUI browser and installer wrappers have executable permissions
 if [[ -f /usr/bin/doomos-firefox ]]; then
     chmod +x /usr/bin/doomos-firefox
 fi
 if [[ -f /usr/local/bin/firefox ]]; then
     chmod +x /usr/local/bin/firefox
+fi
+if [[ -f /usr/bin/doomos-installer-engine ]]; then
+    chmod +x /usr/bin/doomos-installer-engine
+fi
+if [[ -f /usr/bin/doomos-installer ]]; then
+    chmod +x /usr/bin/doomos-installer
+fi
+
+# Ensure liveuser Desktop has the Install DoomOS shortcut pre-populated
+mkdir -p /home/liveuser/Desktop
+if [[ -f /etc/skel/Desktop/doomos-installer.desktop ]]; then
+    cp -a /etc/skel/Desktop/doomos-installer.desktop /home/liveuser/Desktop/
+    chown -R 1000:1000 /home/liveuser/Desktop
+    chmod +x /home/liveuser/Desktop/doomos-installer.desktop
 fi
 
 # Point system-installed Firefox desktop entry to DoomOS smart launcher
