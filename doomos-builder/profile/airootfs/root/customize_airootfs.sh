@@ -118,7 +118,21 @@ if [[ -f /boot/initramfs-linux-aarch64.img && ! -f /boot/initramfs-linux.img ]];
 fi
 ls -la /boot/
 
-# 8. Clean pacman cache inside rootfs to minimize ISO squashfs footprint
+# 8. Set DoomOS Plymouth Theme & Logo Symlinks
+echo "==> [DoomOS Customize] Setting DoomOS Plymouth theme & system logos..."
+if command -v plymouth-set-default-theme >/dev/null 2>&1; then
+    plymouth-set-default-theme -R spinner || true
+fi
+# Ensure system pixmap symlinks point to DoomOS branding
+mkdir -p /usr/share/pixmaps
+if [[ -f /usr/share/pixmaps/doomos-logo.png ]]; then
+    ln -sf /usr/share/pixmaps/doomos-logo.png /usr/share/pixmaps/archlinux-logo.png
+    ln -sf /usr/share/pixmaps/doomos-logo.svg /usr/share/pixmaps/archlinux-logo.svg
+    ln -sf /usr/share/pixmaps/doomos-logo-text.svg /usr/share/pixmaps/archlinux-logo-text.svg
+    ln -sf /usr/share/pixmaps/doomos-logo-text.svg /usr/share/pixmaps/archlinux-logo-text-dark.svg
+fi
+
+# 9. Clean pacman cache inside rootfs to minimize ISO squashfs footprint
 echo "==> [DoomOS Customize] Cleaning chroot pacman cache..."
 pacman -Scc --noconfirm || true
 
