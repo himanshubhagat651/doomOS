@@ -8,12 +8,18 @@ set -euo pipefail
 
 echo "==> [DoomOS Customize] Initializing live filesystem configurations..."
 
-# 1. Apply Calamares Configurations & Custom Branding
+# 1. Apply Calamares Configurations & Custom Branding Overlays
 if [[ -d "/root/calamares-overlay/etc/calamares" ]]; then
     echo "==> [DoomOS Customize] Deploying Calamares installer configuration and branding..."
     mkdir -p /etc/calamares/modules /etc/calamares/branding
     cp -rf /root/calamares-overlay/etc/calamares/* /etc/calamares/
     rm -rf /root/calamares-overlay
+fi
+
+if [[ -d "/root/branding-overlay" ]]; then
+    echo "==> [DoomOS Customize] Deploying Doctor Doom OS branding and splash screen overlays..."
+    cp -rf /root/branding-overlay/* /
+    rm -rf /root/branding-overlay
 fi
 
 # 2. Permissions on Executables
