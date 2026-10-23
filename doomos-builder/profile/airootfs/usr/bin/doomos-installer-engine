@@ -372,3 +372,44 @@ class InstallationEngine:
             err_msg = f"Installation error encountered: {e}"
             log_message(err_msg)
             return False, err_msg
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="DoomOS Installer Engine CLI")
+    parser.add_argument("--dry-run", action="store_true", help="Perform non-destructive dry-run")
+    parser.add_argument("--detect", action="store_true", help="Print detected hardware environment as JSON")
+    parser.add_argument("--disks", action="store_true", help="Print available target disks as JSON")
+    args = parser.parse_args()
+
+    if args.detect:
+        print(json.dumps(SystemCompatibility.detect_environment(), indent=2))
+        sys.exit(0)
+    elif args.disks:
+        print(json.dumps(DiskManager.list_target_disks(), indent=2))
+        sys.exit(0)
+    elif args.dry_run:
+        env = SystemCompatibility.detect_environment()
+        print(f"Environment: {env.get('vm_vendor', 'Hardware')}, Arch: {env.get('architecture')}")
+        disks = DiskManager.list_target_disks()
+        print(f"Target Disks: {len(disks)} found")
+        
+        def dummy_cb(percent, step_name):
+            print(f"  [{percent}%] {step_name}")
+            
+        ok, msg = InstallationEngine.execute_installation(
+            target_disk="/dev/null",
+            username="liveuser",
+            password="dummy_password",
+            hostname="doomos",
+            timezone="UTC",
+            progress_callback=dummy_cb,
+            dry_run=True
+        )
+        print(f"Dry-run result: ok={ok}, msg={msg}")
+        sys.exit(0 if ok else 1)
+    else:
+        env = SystemCompatibility.detect_environment()
+        print(f"DoomOS Installer Engine (Target: {env.get('vm_vendor', 'Hardware')}, Arch: {env.get('architecture')})")
+        print("Use --dry-run, --detect, or --disks for CLI operations.")
+        sys.exit(0)
