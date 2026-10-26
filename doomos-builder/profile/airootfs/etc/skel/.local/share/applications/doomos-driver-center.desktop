@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=DoomOS Driver Center
+GenericName=Device Driver Manager & Diagnostics
+Comment=View device drivers, kernel modules, firmware status, and hardware diagnostics
+Exec=/usr/bin/doomos-driver-center
+Icon=preferences-system-hardware
+Terminal=false
+Categories=System;Settings;HardwareSettings;
+Keywords=driver;drivers;kernel;module;hardware;firmware;gpu;wifi;bluetooth;network;audio;storage;diagnostics;
+StartupNotify=true

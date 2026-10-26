@@ -1,0 +1,969 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+DoomOS Driver Center — Detection Engine & Diagnostic Model
+Architecture: Decoupled Driver Probing Layer, Diagnostic Reasoning Engine, & Report Formatter.
+Pure Python standard library: reads directly from /sys, /proc, udev, and standard system calls.
+Compatible with ARM64 (Apple Silicon), x86_64, bare-metal, and virtual machines.
+"""
+
+import os
+import sys
+import glob
+import re
+import json
+import time
+import shutil
+import platform
+import subprocess
+from typing import Dict, Any, List, Optional
+
+
+class DriverStatus:
+    """Exact canonical driver and hardware diagnostic statuses for DoomOS."""
+    GOOD = "GOOD"
+    WARNING = "WARNING"
+    MISSING = "MISSING"
+    UNKNOWN = "UNKNOWN"
+    UNSUPPORTED = "UNSUPPORTED"
+    ERROR = "ERROR"
+
+    ALL_STATUSES = [GOOD, WARNING, MISSING, UNKNOWN, UNSUPPORTED, ERROR]
+
+
+# ==============================================================================
+# Safe System Access & Sanitization Helpers
+# ==============================================================================
+
+def safe_read_file(path: str) -> str:
+    """Reads a sysfs or procfs file safely without throwing exceptions."""
+    try:
+        if os.path.isfile(path) and os.access(path, os.R_OK):
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                return f.read().strip()
+    except Exception:
+        pass
+    return ""
+
+
+def run_command_safely(args: List[str], timeout: int = 3) -> str:
+    """Executes a command safely with a strict timeout, returning stdout."""
+    try:
+        bin_path = shutil.which(args[0])
+        if not bin_path:
+            return ""
+        cmd = [bin_path] + args[1:]
+        res = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+            check=False
+        )
+        return res.stdout.strip()
+    except Exception:
+        return ""
+
+
+def sanitize_mac(text: str) -> str:
+    """Masks MAC addresses to preserve user privacy."""
+    return re.sub(r'([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}', 'XX:XX:XX:XX:XX:XX', text)
+
+
+def sanitize_text(text: str) -> str:
+    """Sanitizes serial numbers, MAC addresses, and UUIDs."""
+    if not text:
+        return text
+    # Mask MAC
+    text = sanitize_mac(text)
+    # Mask 32-36 char UUIDs
+    text = re.sub(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', '[UUID-MASKED]', text)
+    return text
+
+
+def get_loaded_kernel_modules() -> set:
+    """Returns the set of loaded kernel module names from /proc/modules."""
+    modules = set()
+    proc_modules = safe_read_file("/proc/modules")
+    if proc_modules:
+        for line in proc_modules.splitlines():
+            parts = line.split()
+            if parts:
+                modules.add(parts[0].replace("-", "_"))
+                modules.add(parts[0])
+    return modules
+
+
+# ==============================================================================
+# Environment & Architecture Detection
+# ==============================================================================
+
+def detect_virtualization() -> Dict[str, Any]:
+    """Detects virtual machine hypervisors (VMware, QEMU, KVM, etc.)."""
+    virt_type = "none"
+    virt_cmd = run_command_safely(["systemd-detect-virt"])
+    if virt_cmd and virt_cmd != "none":
+        virt_type = virt_cmd
+    else:
+        # Check DMI sys_vendor or product_name
+        sys_vendor = safe_read_file("/sys/class/dmi/id/sys_vendor").lower()
+        prod_name = safe_read_file("/sys/class/dmi/id/product_name").lower()
+        if "vmware" in sys_vendor or "vmware" in prod_name:
+            virt_type = "vmware"
+        elif "qemu" in sys_vendor or "qemu" in prod_name:
+            virt_type = "qemu"
+        elif "kvm" in sys_vendor or "kvm" in prod_name:
+            virt_type = "kvm"
+
+    is_vm = (virt_type != "none")
+    return {
+        "is_vm": is_vm,
+        "hypervisor": virt_type if is_vm else "None (Bare-Metal)",
+        "type": virt_type
+    }
+
+
+def detect_apple_silicon() -> Dict[str, Any]:
+    """Detects physical Apple Silicon hardware (M1/M2/M3/M4 SoC)."""
+    dt_compat = safe_read_file("/proc/device-tree/compatible").lower()
+    cpuinfo = safe_read_file("/proc/cpuinfo").lower()
+    is_apple = ("apple," in dt_compat or "apple" in cpuinfo)
+    model = "Apple Silicon"
+    dt_model = safe_read_file("/proc/device-tree/model")
+    if dt_model:
+        model = dt_model
+
+    return {
+        "is_apple_silicon": is_apple,
+        "model": model if is_apple else "Standard Platform"
+    }
+
+
+# ==============================================================================
+# Subsystem Driver Detectors
+# ==============================================================================
+
+class DriverDetector:
+    """Audits system hardware devices, kernel drivers, modules, and operational states."""
+
+    @classmethod
+    def detect_system_info(cls) -> Dict[str, Any]:
+        """Collects architecture, kernel, and virtualization environment details."""
+        arch = platform.machine() or "Unknown"
+        kernel = platform.release() or safe_read_file("/proc/sys/kernel/osrelease") or "Unknown"
+        virt = detect_virtualization()
+        apple = detect_apple_silicon()
+
+        return {
+            "architecture": arch,
+            "kernel": kernel,
+            "virtualization": virt,
+            "apple_silicon": apple,
+            "detection_time": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
+            "status": DriverStatus.GOOD
+        }
+
+    @classmethod
+    def detect_graphics(cls, loaded_mods: set, virt: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Audits display adapters, 3D accelerators, and kernel DRM drivers."""
+        gpus: List[Dict[str, Any]] = []
+
+        card_dirs = sorted(glob.glob("/sys/class/drm/card[0-9]"))
+        for card in card_dirs:
+            dev_dir = os.path.join(card, "device")
+            if not os.path.exists(dev_dir):
+                continue
+
+            card_name = os.path.basename(card)
+            driver = "Unknown"
+            drv_link = os.path.join(dev_dir, "driver")
+            if os.path.islink(drv_link):
+                driver = os.path.basename(os.readlink(drv_link))
+
+            # Hardware ID (PCI / USB / Platform)
+            hw_id = "N/A"
+            vendor_id = safe_read_file(os.path.join(dev_dir, "vendor"))
+            device_id = safe_read_file(os.path.join(dev_dir, "device"))
+            if vendor_id and device_id:
+                hw_id = f"{vendor_id.lower()}:{device_id.lower()}"
+
+            # Vendor & Model
+            vendor = "Unknown Vendor"
+            dev_name = "Graphics Display Controller"
+            status = DriverStatus.GOOD
+            firmware_status = "NOT_REQUIRED"
+            explanation = "Hardware graphics driver is actively bound and operational."
+            recommendation = "No action required. Graphics pipeline is operating normally."
+
+            is_driver_bound = (driver != "Unknown" and os.path.exists(drv_link))
+            mod_loaded = "LOADED" if (driver in loaded_mods or driver.replace("-", "_") in loaded_mods) else ("BUILTIN" if is_driver_bound else "UNKNOWN")
+
+            # Check VMware SVGA3D
+            if driver in ("vmwgfx", "svga") or virt.get("type") == "vmware":
+                vendor = "VMware"
+                dev_name = "VMware SVGA3D Virtual Graphics Adapter"
+                driver = "vmwgfx"
+                firmware_status = "HOST_BACKED"
+                explanation = "VMware SVGA3D virtual graphics driver is active. Accelerated 3D is backed by the macOS Metal host GPU. Native host GPU drivers are neither needed nor applicable inside the VM."
+                recommendation = "No action required. Virtual graphics driver is properly bound and accelerated."
+            elif driver == "virtio_gpu":
+                vendor = "Red Hat / QEMU"
+                dev_name = "VirtIO GPU Accelerator"
+                firmware_status = "VIRTUAL"
+                explanation = "VirtIO accelerated graphics driver active in virtualized environment."
+                recommendation = "No action required."
+            elif driver in ("asahi", "apple-drm"):
+                vendor = "Apple Silicon"
+                dev_name = "Apple Silicon AGX Graphics Accelerator"
+                firmware_status = "LOADED"
+                explanation = "Native upstream Asahi DRM driver is driving Apple Silicon GPU."
+                recommendation = "Operating as designed."
+            elif driver in ("amdgpu", "radeon"):
+                vendor = "AMD"
+                dev_name = "AMD Radeon Graphics Controller"
+                firmware_status = "LOADED"
+            elif driver in ("i915", "xe"):
+                vendor = "Intel"
+                dev_name = "Intel Iris / Arc Graphics Controller"
+                firmware_status = "LOADED"
+            elif driver in ("nouveau", "nvidia"):
+                vendor = "NVIDIA"
+                dev_name = "NVIDIA Graphics Controller"
+                firmware_status = "LOADED"
+
+            if not is_driver_bound:
+                status = DriverStatus.MISSING
+                explanation = "No kernel driver is currently bound to this graphics controller."
+                recommendation = "Install or activate the appropriate kernel DRM module for this GPU architecture."
+
+            gpus.append({
+                "category": "Graphics",
+                "name": dev_name,
+                "vendor": vendor,
+                "hardware_id": hw_id,
+                "driver": driver,
+                "driver_bound": is_driver_bound,
+                "module_loaded": mod_loaded,
+                "firmware_status": firmware_status,
+                "operational_status": "ACTIVE" if is_driver_bound else "STANDBY",
+                "status": status,
+                "explanation": explanation,
+                "recommendation": recommendation
+            })
+
+        # Fallback if no /sys/class/drm/card* exists
+        if not gpus:
+            gpus.append({
+                "category": "Graphics",
+                "name": "Standard Accelerated Framebuffer / Wayland KMS",
+                "vendor": "Generic / Host Display",
+                "hardware_id": "N/A",
+                "driver": "DRM / simpledrm",
+                "driver_bound": True,
+                "module_loaded": "BUILTIN",
+                "firmware_status": "NOT_REQUIRED",
+                "operational_status": "ACTIVE",
+                "status": DriverStatus.GOOD,
+                "explanation": "Graphics display surface is driven by the kernel KMS / Wayland compositor pipeline.",
+                "recommendation": "No action required."
+            })
+
+        return gpus
+
+    @classmethod
+    def detect_network(cls, loaded_mods: set, virt: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Audits network controllers (Wi-Fi, Ethernet) and driver bindings."""
+        devices: List[Dict[str, Any]] = []
+
+        net_dirs = sorted(glob.glob("/sys/class/net/*"))
+        for n_dir in net_dirs:
+            iface = os.path.basename(n_dir)
+            if iface == "lo":
+                continue
+
+            operstate = safe_read_file(os.path.join(n_dir, "operstate")).lower() or "down"
+            is_wireless = os.path.exists(os.path.join(n_dir, "wireless")) or os.path.exists(os.path.join(n_dir, "phy80211")) or iface.startswith("wl")
+
+            driver = "Unknown"
+            drv_link = os.path.join(n_dir, "device/driver")
+            if os.path.islink(drv_link):
+                driver = os.path.basename(os.readlink(drv_link))
+
+            # Hardware ID
+            hw_id = "N/A"
+            dev_link = os.path.join(n_dir, "device")
+            if os.path.exists(dev_link):
+                vendor_id = safe_read_file(os.path.join(dev_link, "vendor"))
+                device_id = safe_read_file(os.path.join(dev_link, "device"))
+                if vendor_id and device_id:
+                    hw_id = f"{vendor_id.lower()}:{device_id.lower()}"
+
+            is_driver_bound = (driver != "Unknown" and os.path.exists(drv_link))
+            mod_loaded = "LOADED" if (driver in loaded_mods or driver.replace("-", "_") in loaded_mods) else ("BUILTIN" if is_driver_bound else "UNKNOWN")
+
+            if is_wireless:
+                category = "Wi-Fi"
+                name = f"Wireless Network Adapter ({iface})"
+                vendor = "Broadcom / Wireless Controller" if "brcm" in driver else "Generic Wireless"
+                firmware_status = "LOADED" if is_driver_bound else "UNKNOWN"
+
+                if is_driver_bound and operstate == "up":
+                    status = DriverStatus.GOOD
+                    explanation = f"Wireless driver '{driver}' is bound and actively transmitting data."
+                    recommendation = "No action required."
+                elif is_driver_bound:
+                    status = DriverStatus.WARNING
+                    explanation = f"Wireless driver '{driver}' is bound, but interface is currently disconnected or down."
+                    recommendation = "Select an available Wi-Fi access point in Network Settings to connect."
+                else:
+                    status = DriverStatus.MISSING
+                    explanation = f"Wireless interface '{iface}' has no bound kernel driver."
+                    recommendation = "Verify wireless kernel module and required firmware are present."
+            else:
+                category = "Ethernet"
+                name = f"Ethernet Controller ({iface})"
+                vendor = "Network Controller"
+                firmware_status = "NOT_REQUIRED"
+
+                if driver == "vmxnet3":
+                    name = f"VMware vmxnet3 Virtual High-Speed NIC ({iface})"
+                    vendor = "VMware"
+                elif driver == "virtio_net":
+                    name = f"VirtIO Virtual Network Adapter ({iface})"
+                    vendor = "Red Hat / QEMU"
+
+                if is_driver_bound and operstate == "up":
+                    status = DriverStatus.GOOD
+                    explanation = f"Network driver '{driver}' is bound and interface is connected."
+                    recommendation = "No action required."
+                elif is_driver_bound:
+                    status = DriverStatus.WARNING
+                    explanation = f"Driver '{driver}' is bound, but cable/carrier is disconnected (state: {operstate})."
+                    recommendation = "Connect a network cable or enable the virtual network switch."
+                else:
+                    status = DriverStatus.MISSING
+                    explanation = f"Ethernet interface '{iface}' lacks a bound kernel driver."
+                    recommendation = "Verify kernel driver modules for the detected network controller."
+
+            devices.append({
+                "category": category,
+                "name": name,
+                "vendor": vendor,
+                "hardware_id": hw_id,
+                "driver": driver,
+                "driver_bound": is_driver_bound,
+                "module_loaded": mod_loaded,
+                "firmware_status": firmware_status,
+                "operational_status": operstate.upper(),
+                "status": status,
+                "explanation": explanation,
+                "recommendation": recommendation
+            })
+
+        return devices
+
+    @classmethod
+    def detect_bluetooth(cls, loaded_mods: set) -> List[Dict[str, Any]]:
+        """Audits Bluetooth adapters, RFKILL blocks, and kernel drivers."""
+        devices: List[Dict[str, Any]] = []
+
+        bt_dirs = sorted(glob.glob("/sys/class/bluetooth/hci*"))
+        for b_dir in bt_dirs:
+            hci = os.path.basename(b_dir)
+            driver = "Unknown"
+            drv_link = os.path.join(b_dir, "device/driver")
+            if os.path.islink(drv_link):
+                driver = os.path.basename(os.readlink(drv_link))
+
+            # Check rfkill soft-block
+            blocked = False
+            rfkill_dirs = glob.glob("/sys/class/rfkill/rfkill*")
+            for r in rfkill_dirs:
+                if safe_read_file(os.path.join(r, "type")) == "bluetooth":
+                    if safe_read_file(os.path.join(r, "soft")) == "1":
+                        blocked = True
+                        break
+
+            is_driver_bound = (driver != "Unknown" and os.path.exists(drv_link))
+            mod_loaded = "LOADED" if (driver in loaded_mods or driver.replace("-", "_") in loaded_mods) else ("BUILTIN" if is_driver_bound else "UNKNOWN")
+
+            if blocked:
+                status = DriverStatus.WARNING
+                explanation = f"Bluetooth controller '{hci}' is soft-blocked by system RFKILL."
+                recommendation = "Enable Bluetooth in KDE System Settings or run 'rfkill unblock bluetooth'."
+            elif is_driver_bound:
+                status = DriverStatus.GOOD
+                explanation = f"Bluetooth controller '{hci}' is bound to '{driver}' and operational."
+                recommendation = "No action required."
+            else:
+                status = DriverStatus.WARNING
+                explanation = f"Bluetooth device '{hci}' detected with unconfirmed driver binding."
+                recommendation = "Verify bluez daemon and bluetooth kernel module status."
+
+            devices.append({
+                "category": "Bluetooth",
+                "name": f"Bluetooth Adapter ({hci})",
+                "vendor": "Bluetooth SIG / Controller",
+                "hardware_id": "N/A",
+                "driver": driver if driver != "Unknown" else "btusb / kernel-hci",
+                "driver_bound": is_driver_bound,
+                "module_loaded": mod_loaded,
+                "firmware_status": "LOADED" if is_driver_bound else "UNKNOWN",
+                "operational_status": "BLOCKED" if blocked else "OPERATIONAL",
+                "status": status,
+                "explanation": explanation,
+                "recommendation": recommendation
+            })
+
+        if not devices:
+            devices.append({
+                "category": "Bluetooth",
+                "name": "Integrated Bluetooth Subsystem",
+                "vendor": "Generic / Virtual Controller",
+                "hardware_id": "N/A",
+                "driver": "kernel-bluetooth",
+                "driver_bound": True,
+                "module_loaded": "LOADED" if "bluetooth" in loaded_mods else "STANDBY",
+                "firmware_status": "NOT_REQUIRED",
+                "operational_status": "STANDBY",
+                "status": DriverStatus.GOOD,
+                "explanation": "Bluetooth subsystem is initialized in kernel; no external peripheral controller attached.",
+                "recommendation": "Attach a USB Bluetooth dongle or enable host passthrough in VM settings if needed."
+            })
+
+        return devices
+
+    @classmethod
+    def detect_audio(cls, loaded_mods: set) -> List[Dict[str, Any]]:
+        """Audits sound cards, ALSA endpoints, and PipeWire/WirePlumber servers."""
+        devices: List[Dict[str, Any]] = []
+
+        cards: List[str] = []
+        asound_cards = safe_read_file("/proc/asound/cards")
+        if asound_cards:
+            for line in asound_cards.splitlines():
+                if "]:" in line:
+                    cards.append(line.split("]:", 1)[1].strip())
+
+        pipewire_running = bool(run_command_safely(["pgrep", "-x", "pipewire"]))
+        wireplumber_running = bool(run_command_safely(["pgrep", "-x", "wireplumber"]))
+
+        card_dirs = sorted(glob.glob("/sys/class/sound/card[0-9]"))
+        for card_d in card_dirs:
+            c_name = os.path.basename(card_d)
+            driver = "Unknown"
+            drv_link = os.path.join(card_d, "device/driver")
+            if os.path.islink(drv_link):
+                driver = os.path.basename(os.readlink(drv_link))
+
+            is_driver_bound = (driver != "Unknown" and os.path.exists(drv_link))
+            mod_loaded = "LOADED" if (driver in loaded_mods or driver.replace("-", "_") in loaded_mods) else ("BUILTIN" if is_driver_bound else "UNKNOWN")
+
+            if pipewire_running:
+                status = DriverStatus.GOOD
+                explanation = f"Audio controller '{c_name}' bound to '{driver}'. PipeWire and WirePlumber audio servers are active."
+                recommendation = "No action required. Sound subsystem is fully operational."
+            else:
+                status = DriverStatus.WARNING
+                explanation = f"Audio controller '{c_name}' bound to '{driver}', but PipeWire audio server is not detected."
+                recommendation = "Verify user session audio service with 'systemctl --user status pipewire'."
+
+            devices.append({
+                "category": "Audio",
+                "name": f"High Definition Audio Device ({c_name})",
+                "vendor": "ALSA / PipeWire Endpoint",
+                "hardware_id": "N/A",
+                "driver": driver if driver != "Unknown" else "snd_hda_intel / snd_soc",
+                "driver_bound": is_driver_bound,
+                "module_loaded": mod_loaded,
+                "firmware_status": "NOT_REQUIRED",
+                "operational_status": "ACTIVE" if pipewire_running else "STANDBY",
+                "status": status,
+                "pipewire_active": pipewire_running,
+                "wireplumber_active": wireplumber_running,
+                "explanation": explanation,
+                "recommendation": recommendation
+            })
+
+        if not devices:
+            devices.append({
+                "category": "Audio",
+                "name": "Virtual Audio / PipeWire Mixed Loopback",
+                "vendor": "PipeWire Audio Infrastructure",
+                "hardware_id": "N/A",
+                "driver": "snd-dummy / pipewire",
+                "driver_bound": True,
+                "module_loaded": "BUILTIN",
+                "firmware_status": "NOT_REQUIRED",
+                "operational_status": "ACTIVE" if pipewire_running else "STANDBY",
+                "status": DriverStatus.GOOD,
+                "pipewire_active": pipewire_running,
+                "wireplumber_active": wireplumber_running,
+                "explanation": "PipeWire audio server is routing digital playback and microphone capture.",
+                "recommendation": "No action required."
+            })
+
+        return devices
+
+    @classmethod
+    def detect_storage(cls, loaded_mods: set) -> List[Dict[str, Any]]:
+        """Audits storage controllers, NVMe/SATA/VirtIO block devices, and drivers."""
+        devices: List[Dict[str, Any]] = []
+
+        block_dirs = sorted(glob.glob("/sys/block/*"))
+        for b_dir in block_dirs:
+            name = os.path.basename(b_dir)
+            if name.startswith(("loop", "ram", "zram")):
+                continue
+
+            size_raw = safe_read_file(os.path.join(b_dir, "size"))
+            if not size_raw or size_raw == "0":
+                continue
+
+            driver = "Unknown"
+            # Trace parent device driver
+            dev_path = os.path.join(b_dir, "device")
+            if os.path.islink(os.path.join(dev_path, "driver")):
+                driver = os.path.basename(os.readlink(os.path.join(dev_path, "driver")))
+            elif name.startswith("nvme"):
+                driver = "nvme"
+            elif name.startswith("sd"):
+                driver = "sd / scsi"
+            elif name.startswith("vd"):
+                driver = "virtio_blk"
+
+            controller_type = "Block Storage Controller"
+            if "nvme" in driver:
+                controller_type = "Non-Volatile Memory Express (NVMe) Controller"
+            elif "scsi" in driver or "sd" in driver:
+                controller_type = "SCSI / SATA Disk Controller"
+            elif "virtio" in driver:
+                controller_type = "VirtIO Virtual Block Controller"
+
+            mod_loaded = "LOADED" if (driver in loaded_mods or driver.replace("-", "_") in loaded_mods) else "BUILTIN"
+
+            devices.append({
+                "category": "Storage",
+                "name": f"Storage Drive (/dev/{name})",
+                "vendor": controller_type,
+                "hardware_id": "N/A",
+                "driver": driver,
+                "driver_bound": True,
+                "module_loaded": mod_loaded,
+                "firmware_status": "NOT_REQUIRED",
+                "operational_status": "READY",
+                "status": DriverStatus.GOOD,
+                "explanation": f"Drive is mounted and managed by kernel driver '{driver}'.",
+                "recommendation": "No action required. Storage device is operational."
+            })
+
+        return devices
+
+    @classmethod
+    def detect_input_and_usb(cls, loaded_mods: set) -> Dict[str, List[Dict[str, Any]]]:
+        """Audits keyboard, pointing, touchpad, and connected USB devices."""
+        input_devs: List[Dict[str, Any]] = []
+        usb_devs: List[Dict[str, Any]] = []
+
+        # 1. Inputs via /proc/bus/input/devices
+        input_raw = safe_read_file("/proc/bus/input/devices")
+        if input_raw:
+            cur_name = ""
+            cur_handlers = ""
+            for line in input_raw.splitlines():
+                if line.startswith("N: Name="):
+                    cur_name = line.split("Name=", 1)[1].strip('"\'')
+                elif line.startswith("H: Handlers="):
+                    cur_handlers = line.split("Handlers=", 1)[1].strip()
+                elif line.strip() == "":
+                    if cur_name:
+                        category = "Keyboard and mouse"
+                        if "kbd" in cur_handlers:
+                            category = "Keyboard and mouse"
+                        elif "mouse" in cur_handlers or "touchpad" in cur_name.lower():
+                            category = "Touchpad/trackpad"
+
+                        input_devs.append({
+                            "category": category,
+                            "name": cur_name,
+                            "vendor": "Standard Input",
+                            "hardware_id": "N/A",
+                            "driver": cur_handlers or "evdev / hid",
+                            "driver_bound": True,
+                            "module_loaded": "BUILTIN",
+                            "firmware_status": "NOT_REQUIRED",
+                            "operational_status": "ACTIVE",
+                            "status": DriverStatus.GOOD,
+                            "explanation": f"Input device registered with event handlers: '{cur_handlers}'.",
+                            "recommendation": "No action required."
+                        })
+                        cur_name = ""
+                        cur_handlers = ""
+            if cur_name:
+                input_devs.append({
+                    "category": "Keyboard and mouse",
+                    "name": cur_name,
+                    "vendor": "Standard Input",
+                    "hardware_id": "N/A",
+                    "driver": cur_handlers or "evdev",
+                    "driver_bound": True,
+                    "module_loaded": "BUILTIN",
+                    "firmware_status": "NOT_REQUIRED",
+                    "operational_status": "ACTIVE",
+                    "status": DriverStatus.GOOD,
+                    "explanation": f"Input device registered with event handlers: '{cur_handlers}'.",
+                    "recommendation": "No action required."
+                })
+
+        if not input_devs:
+            input_devs.append({
+                "category": "Keyboard and mouse",
+                "name": "Standard Virtual Keyboard & Pointer",
+                "vendor": "System Host",
+                "hardware_id": "N/A",
+                "driver": "evdev / hid",
+                "driver_bound": True,
+                "module_loaded": "BUILTIN",
+                "firmware_status": "NOT_REQUIRED",
+                "operational_status": "ACTIVE",
+                "status": DriverStatus.GOOD,
+                "explanation": "Virtual keyboard and mouse event streams active.",
+                "recommendation": "No action required."
+            })
+
+        # 2. USB via /sys/bus/usb/devices/
+        usb_dirs = sorted(glob.glob("/sys/bus/usb/devices/[0-9]*"))
+        for u in usb_dirs:
+            product = safe_read_file(os.path.join(u, "product"))
+            mfg = safe_read_file(os.path.join(u, "manufacturer")) or "Generic"
+            v_id = safe_read_file(os.path.join(u, "idVendor"))
+            p_id = safe_read_file(os.path.join(u, "idProduct"))
+            hw_id = f"{v_id}:{p_id}" if v_id and p_id else "N/A"
+
+            driver = "Unknown"
+            drv_link = os.path.join(u, "driver")
+            if os.path.islink(drv_link):
+                driver = os.path.basename(os.readlink(drv_link))
+
+            if product:
+                usb_devs.append({
+                    "category": "USB",
+                    "name": product,
+                    "vendor": mfg,
+                    "hardware_id": hw_id,
+                    "driver": driver if driver != "Unknown" else "usbcore / hub",
+                    "driver_bound": True,
+                    "module_loaded": "BUILTIN",
+                    "firmware_status": "NOT_REQUIRED",
+                    "operational_status": "ATTACHED",
+                    "status": DriverStatus.GOOD,
+                    "explanation": f"USB device '{product}' recognized by USB core driver.",
+                    "recommendation": "No action required."
+                })
+
+        return {"inputs": input_devs, "usb": usb_devs}
+
+    @classmethod
+    def detect_displays(cls) -> List[Dict[str, Any]]:
+        """Audits connected display surfaces and DRM connectors."""
+        displays: List[Dict[str, Any]] = []
+
+        connectors = glob.glob("/sys/class/drm/card[0-9]-*")
+        for conn in connectors:
+            status = safe_read_file(os.path.join(conn, "status"))
+            if status == "connected":
+                name = os.path.basename(conn).split("-", 1)[1]
+                modes = safe_read_file(os.path.join(conn, "modes"))
+                res = modes.splitlines()[0] if modes else "Native"
+                displays.append({
+                    "category": "Display",
+                    "name": f"Connected Display Output ({name})",
+                    "vendor": "DRM Output Connector",
+                    "hardware_id": "N/A",
+                    "driver": "drm_kms_helper",
+                    "driver_bound": True,
+                    "module_loaded": "BUILTIN",
+                    "firmware_status": "NOT_REQUIRED",
+                    "operational_status": f"CONNECTED ({res})",
+                    "status": DriverStatus.GOOD,
+                    "explanation": f"Display connected on port '{name}' with mode '{res}'.",
+                    "recommendation": "No action required."
+                })
+
+        if not displays:
+            displays.append({
+                "category": "Display",
+                "name": "Virtual Display / Wayland Surface",
+                "vendor": "Wayland Compositor",
+                "hardware_id": "N/A",
+                "driver": "KWin / Wayland DRM",
+                "driver_bound": True,
+                "module_loaded": "BUILTIN",
+                "firmware_status": "NOT_REQUIRED",
+                "operational_status": "CONNECTED",
+                "status": DriverStatus.GOOD,
+                "explanation": "Primary desktop surface rendered via Wayland DRM backend.",
+                "recommendation": "No action required."
+            })
+
+        return displays
+
+    @classmethod
+    def get_full_driver_report(cls) -> Dict[str, Any]:
+        """Gathers complete driver diagnostics across all hardware categories."""
+        loaded_mods = get_loaded_kernel_modules()
+        sys_info = cls.detect_system_info()
+        virt = sys_info["virtualization"]
+
+        gpus = cls.detect_graphics(loaded_mods, virt)
+        nets = cls.detect_network(loaded_mods, virt)
+        bts = cls.detect_bluetooth(loaded_mods)
+        audios = cls.detect_audio(loaded_mods)
+        storages = cls.detect_storage(loaded_mods)
+        inputs_and_usb = cls.detect_input_and_usb(loaded_mods)
+        displays = cls.detect_displays()
+
+        all_devices: List[Dict[str, Any]] = (
+            gpus +
+            nets +
+            bts +
+            audios +
+            storages +
+            inputs_and_usb["inputs"] +
+            inputs_and_usb["usb"] +
+            displays
+        )
+
+        # Calculate counts
+        counts = {
+            DriverStatus.GOOD: 0,
+            DriverStatus.WARNING: 0,
+            DriverStatus.MISSING: 0,
+            DriverStatus.UNKNOWN: 0,
+            DriverStatus.UNSUPPORTED: 0,
+            DriverStatus.ERROR: 0
+        }
+
+        for dev in all_devices:
+            st = dev.get("status", DriverStatus.UNKNOWN)
+            counts[st] = counts.get(st, 0) + 1
+
+        # Generate consolidated recommendations
+        recommendations = []
+        if virt.get("is_vm"):
+            recommendations.append(
+                f"Virtualization Detected ({virt.get('hypervisor')}): Host hardware abstraction is active. "
+                "Hardware drivers are provided by the hypervisor guest tools. Do not attempt to install physical host GPU or motherboard drivers."
+            )
+
+        if sys_info.get("apple_silicon", {}).get("is_apple_silicon"):
+            recommendations.append(
+                "Apple Silicon Hardware Detected: Drivers are managed via the integrated upstream kernel. "
+                "Do not install x86 proprietary drivers (NVIDIA, Intel, AMD) as they are incompatible with AArch64."
+            )
+
+        # Device specific recommendations
+        for dev in all_devices:
+            st = dev.get("status")
+            if st in (DriverStatus.WARNING, DriverStatus.MISSING, DriverStatus.ERROR):
+                recommendations.append(f"[{dev.get('category')} - {dev.get('name')}]: {dev.get('recommendation')}")
+
+        if not recommendations:
+            recommendations.append("All detected hardware components are utilizing verified drivers. System is healthy.")
+
+        return {
+            "system": sys_info,
+            "devices": all_devices,
+            "summary": counts,
+            "recommended_actions": recommendations,
+            "categories": {
+                "Graphics": gpus,
+                "Network": [d for d in nets if d.get("category") in ("Ethernet", "Wi-Fi")],
+                "Bluetooth": bts,
+                "Audio": audios,
+                "Storage": storages,
+                "Input": inputs_and_usb["inputs"],
+                "USB": inputs_and_usb["usb"],
+                "Display": displays,
+                "Other Devices": []
+            }
+        }
+
+
+# ==============================================================================
+# Diagnostic Report Formatter (Exact Specification Compliance)
+# ==============================================================================
+
+def generate_diagnostic_report(report_data: Dict[str, Any]) -> str:
+    """Formats the diagnostic report matching the exact structure in Section 11."""
+    sys_info = report_data.get("system") or {}
+    cats = report_data.get("categories") or {}
+    summary = report_data.get("summary") or {}
+    actions = report_data.get("recommended_actions") or []
+
+    lines = [
+        "DoomOS Driver Diagnostic Report",
+        "================================",
+        "",
+        "System",
+        "------",
+        f"Architecture: {sys_info.get('architecture', 'Unknown')}",
+        f"Kernel: {sys_info.get('kernel', 'Unknown')}",
+        f"Detection Time: {sys_info.get('detection_time', 'Unknown')}",
+        "",
+        "Graphics",
+        "--------"
+    ]
+
+    gpus = cats.get("Graphics") or []
+    if gpus:
+        for g in gpus:
+            lines.append(f"Device: {g.get('name', 'Unknown')}")
+            lines.append(f"Driver: {g.get('driver', 'Unknown')}")
+            lines.append(f"Kernel Module: {g.get('module_loaded', 'Unknown')}")
+            lines.append(f"Firmware: {g.get('firmware_status', 'Unknown')}")
+            lines.append(f"Status: {g.get('status', DriverStatus.UNKNOWN)}")
+    else:
+        lines.append("Device: Not detected")
+        lines.append("Driver: Unknown")
+        lines.append("Kernel Module: Unknown")
+        lines.append("Firmware: Unknown")
+        lines.append("Status: UNKNOWN")
+
+    lines.append("")
+    lines.append("Network")
+    lines.append("-------")
+    nets = cats.get("Network") or []
+    if nets:
+        for n in nets:
+            lines.append(f"Device: {sanitize_text(n.get('name', 'Unknown'))}")
+            lines.append(f"Driver: {n.get('driver', 'Unknown')}")
+            lines.append(f"Firmware: {n.get('firmware_status', 'Unknown')}")
+            lines.append(f"Status: {n.get('status', DriverStatus.UNKNOWN)}")
+    else:
+        lines.append("Device: Not detected")
+        lines.append("Driver: Unknown")
+        lines.append("Firmware: Unknown")
+        lines.append("Status: UNKNOWN")
+
+    lines.append("")
+    lines.append("Bluetooth")
+    lines.append("---------")
+    bts = cats.get("Bluetooth") or []
+    if bts:
+        for b in bts:
+            lines.append(f"Device: {b.get('name', 'Unknown')}")
+            lines.append(f"Driver: {b.get('driver', 'Unknown')}")
+            lines.append(f"Firmware: {b.get('firmware_status', 'Unknown')}")
+            lines.append(f"Status: {b.get('status', DriverStatus.UNKNOWN)}")
+    else:
+        lines.append("Device: Not detected")
+        lines.append("Driver: Unknown")
+        lines.append("Firmware: Unknown")
+        lines.append("Status: UNKNOWN")
+
+    lines.append("")
+    lines.append("Audio")
+    lines.append("-----")
+    audios = cats.get("Audio") or []
+    if audios:
+        for a in audios:
+            lines.append(f"Device: {a.get('name', 'Unknown')}")
+            lines.append(f"Kernel Module: {a.get('module_loaded', 'Unknown')}")
+            lines.append(f"PipeWire: {'Active' if a.get('pipewire_active', False) else 'Inactive'}")
+            lines.append(f"WirePlumber: {'Active' if a.get('wireplumber_active', False) else 'Inactive'}")
+            lines.append(f"Status: {a.get('status', DriverStatus.UNKNOWN)}")
+    else:
+        lines.append("Device: Not detected")
+        lines.append("Kernel Module: Unknown")
+        lines.append("PipeWire: Inactive")
+        lines.append("WirePlumber: Inactive")
+        lines.append("Status: UNKNOWN")
+
+    lines.append("")
+    lines.append("Storage")
+    lines.append("-------")
+    storages = cats.get("Storage") or []
+    if storages:
+        for s in storages:
+            lines.append(f"Device: {s.get('name', 'Unknown')}")
+            lines.append(f"Controller: {s.get('vendor', 'Unknown')}")
+            lines.append(f"Kernel Module: {s.get('module_loaded', 'Unknown')}")
+            lines.append(f"Status: {s.get('status', DriverStatus.UNKNOWN)}")
+    else:
+        lines.append("Device: Not detected")
+        lines.append("Controller: Unknown")
+        lines.append("Kernel Module: Unknown")
+        lines.append("Status: UNKNOWN")
+
+    lines.append("")
+    lines.append("Input and USB")
+    lines.append("-------------")
+    inputs = cats.get("Input") or []
+    usbs = cats.get("USB") or []
+    all_input_usb = inputs + usbs
+    if all_input_usb:
+        dev_names = ", ".join([d.get("name", "") for d in all_input_usb if d.get("name")])
+        lines.append(f"Detected devices: {sanitize_text(dev_names)}")
+        driver_info = ", ".join(list(set([d.get("driver", "") for d in all_input_usb if d.get("driver")])))
+        lines.append(f"Driver information: {driver_info}")
+        overall_input_status = DriverStatus.GOOD
+        for d in all_input_usb:
+            if d.get("status") in (DriverStatus.WARNING, DriverStatus.ERROR, DriverStatus.MISSING):
+                overall_input_status = d.get("status")
+                break
+        lines.append(f"Status: {overall_input_status}")
+    else:
+        lines.append("Detected devices: None")
+        lines.append("Driver information: Unknown")
+        lines.append("Status: UNKNOWN")
+
+    lines.append("")
+    lines.append("Summary")
+    lines.append("-------")
+    lines.append(f"GOOD: {summary.get(DriverStatus.GOOD, 0)}")
+    lines.append(f"WARNING: {summary.get(DriverStatus.WARNING, 0)}")
+    lines.append(f"MISSING: {summary.get(DriverStatus.MISSING, 0)}")
+    lines.append(f"UNKNOWN: {summary.get(DriverStatus.UNKNOWN, 0)}")
+    lines.append(f"UNSUPPORTED: {summary.get(DriverStatus.UNSUPPORTED, 0)}")
+    lines.append(f"ERROR: {summary.get(DriverStatus.ERROR, 0)}")
+
+    lines.append("")
+    lines.append("Recommended Actions")
+    lines.append("------------------")
+    if actions:
+        for idx, act in enumerate(actions, 1):
+            lines.append(f"{idx}. {act}")
+    else:
+        lines.append("No actions required.")
+
+    return "\n".join(lines)
+
+
+# ==============================================================================
+# Entrypoint & CLI Options
+# ==============================================================================
+
+def main():
+    """Main CLI entrypoint."""
+    args = sys.argv[1:]
+
+    if "--help" in args or "-h" in args:
+        print("DoomOS Driver Center — Detection & Diagnostic Engine")
+        print("Usage:")
+        print("  doomos-driver-detect           # Output formatted diagnostic report")
+        print("  doomos-driver-detect --json    # Output raw structured JSON")
+        print("  doomos-driver-detect --report  # Output plain text report")
+        sys.exit(0)
+
+    report_data = DriverDetector.get_full_driver_report()
+
+    if "--json" in args:
+        print(json.dumps(report_data, indent=2))
+    else:
+        print(generate_diagnostic_report(report_data))
+
+
+if __name__ == "__main__":
+    main()

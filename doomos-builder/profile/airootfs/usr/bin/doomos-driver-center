@@ -1,0 +1,587 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+DoomOS Driver Center — Graphical User Interface
+Designed for KDE Plasma 6 (Wayland) using Python Tkinter.
+Features:
+ - System Overview Dashboard (Hardware Architecture, Kernel, Hypervisor/Platform)
+ - Real-time Status Badges (GOOD, WARNING, MISSING, UNKNOWN, UNSUPPORTED, ERROR)
+ - Category Navigation (Graphics, Network, Bluetooth, Audio, Storage, USB, Input, Display)
+ - Comprehensive Device Inspector (Hardware ID, Driver, Module, Firmware, Diagnostic Reasoning)
+ - Action Toolbar: Dynamic Refresh, Copy Diagnostic Report, Export Report
+ - Clean Dr. Doom aesthetic matching KDE Dark / DoomOS Green theme
+"""
+
+import os
+import sys
+import threading
+from typing import Any, Dict, List, Optional
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+
+# Robust Import of Detection Engine
+try:
+    from doomos_driver_detect import DriverDetector, generate_diagnostic_report, DriverStatus
+except Exception:
+    import importlib.machinery
+    import importlib.util
+    detect_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "doomos-driver-detect")
+    if not os.path.exists(detect_path):
+        detect_path = "/usr/bin/doomos-driver-detect"
+
+    loader = importlib.machinery.SourceFileLoader("doomos_driver_detect", detect_path)
+    spec = importlib.util.spec_from_loader("doomos_driver_detect", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    DriverDetector = mod.DriverDetector
+    generate_diagnostic_report = mod.generate_diagnostic_report
+    DriverStatus = mod.DriverStatus
+
+
+# Theme Palette (Matches KDE Plasma Dark / DoomOS Emerald Green aesthetic)
+COLOR_BG_DARK = "#181a1f"
+COLOR_SIDEBAR = "#21252b"
+COLOR_CARD = "#282c34"
+COLOR_CARD_BORDER = "#3b4048"
+COLOR_TEXT_MAIN = "#abb2bf"
+COLOR_TEXT_HEAD = "#ffffff"
+COLOR_TEXT_MUTED = "#5c6370"
+COLOR_ACCENT = "#98c379"         # DoomOS signature emerald green
+COLOR_ACCENT_HOVER = "#a8d389"
+
+# Status Badge Colors
+COLOR_STATUS = {
+    DriverStatus.GOOD: "#98c379",        # Soft Green
+    DriverStatus.WARNING: "#e5c07b",     # Amber Yellow
+    DriverStatus.MISSING: "#d19a66",     # Orange
+    DriverStatus.UNKNOWN: "#61afef",     # Sky Blue
+    DriverStatus.UNSUPPORTED: "#c678dd", # Purple
+    DriverStatus.ERROR: "#e06c75"        # Coral Red
+}
+
+
+class DriverCenterApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+
+        self.title("DoomOS Driver Center")
+        self.geometry("1020x680")
+        self.minsize(860, 560)
+        self.configure(bg=COLOR_BG_DARK)
+
+        self.report_data: Dict[str, Any] = {}
+        self.selected_category = tk.StringVar(value="All Devices")
+        self.is_scanning = False
+
+        self.setup_styles()
+        self.build_ui()
+        self.refresh_driver_data()
+
+    def setup_styles(self):
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+
+        style.configure("TFrame", background=COLOR_BG_DARK)
+        style.configure("Sidebar.TFrame", background=COLOR_SIDEBAR)
+        style.configure("Card.TFrame", background=COLOR_CARD, relief="flat")
+        style.configure("TLabel", background=COLOR_BG_DARK, foreground=COLOR_TEXT_MAIN, font=("sans-serif", 10))
+        style.configure("Title.TLabel", font=("sans-serif", 14, "bold"), foreground=COLOR_TEXT_HEAD, background=COLOR_SIDEBAR)
+        style.configure("Subtitle.TLabel", font=("sans-serif", 9), foreground=COLOR_TEXT_MUTED, background=COLOR_SIDEBAR)
+        style.configure("CardTitle.TLabel", font=("sans-serif", 11, "bold"), foreground=COLOR_TEXT_HEAD, background=COLOR_CARD)
+        style.configure("CardText.TLabel", font=("sans-serif", 9), foreground=COLOR_TEXT_MAIN, background=COLOR_CARD)
+        style.configure("CardMuted.TLabel", font=("sans-serif", 9), foreground=COLOR_TEXT_MUTED, background=COLOR_CARD)
+
+        # Treeview styling
+        style.configure(
+            "Treeview",
+            background=COLOR_CARD,
+            foreground=COLOR_TEXT_MAIN,
+            fieldbackground=COLOR_CARD,
+            rowheight=30,
+            font=("sans-serif", 9)
+        )
+        style.configure(
+            "Treeview.Heading",
+            background=COLOR_SIDEBAR,
+            foreground=COLOR_TEXT_HEAD,
+            font=("sans-serif", 9, "bold"),
+            relief="flat"
+        )
+        style.map(
+            "Treeview",
+            background=[("selected", "#3e4451")],
+            foreground=[("selected", COLOR_TEXT_HEAD)]
+        )
+
+    def build_ui(self):
+        # 1. Top Header Bar
+        header = tk.Frame(self, bg=COLOR_SIDEBAR, height=64, padx=20, pady=10)
+        header.pack(fill="x", side="top")
+
+        title_frame = tk.Frame(header, bg=COLOR_SIDEBAR)
+        title_frame.pack(side="left", fill="y")
+
+        lbl_title = tk.Label(
+            title_frame,
+            text="DoomOS Driver Center",
+            font=("sans-serif", 14, "bold"),
+            fg=COLOR_TEXT_HEAD,
+            bg=COLOR_SIDEBAR
+        )
+        lbl_title.pack(anchor="w")
+
+        self.lbl_subtitle = tk.Label(
+            title_frame,
+            text="Detecting system hardware architecture...",
+            font=("sans-serif", 9),
+            fg=COLOR_TEXT_MUTED,
+            bg=COLOR_SIDEBAR
+        )
+        self.lbl_subtitle.pack(anchor="w")
+
+        btn_bar = tk.Frame(header, bg=COLOR_SIDEBAR)
+        btn_bar.pack(side="right", fill="y")
+
+        self.btn_refresh = tk.Button(
+            btn_bar,
+            text="↻ Refresh",
+            font=("sans-serif", 9, "bold"),
+            bg="#2c313a",
+            fg=COLOR_TEXT_HEAD,
+            activebackground=COLOR_ACCENT,
+            activeforeground="#000000",
+            relief="flat",
+            padx=12,
+            pady=6,
+            cursor="hand2",
+            command=self.refresh_driver_data
+        )
+        self.btn_refresh.pack(side="left", padx=5)
+
+        btn_copy = tk.Button(
+            btn_bar,
+            text="📋 Copy Report",
+            font=("sans-serif", 9),
+            bg="#2c313a",
+            fg=COLOR_TEXT_MAIN,
+            activebackground="#3e4451",
+            activeforeground=COLOR_TEXT_HEAD,
+            relief="flat",
+            padx=12,
+            pady=6,
+            cursor="hand2",
+            command=self.copy_report_to_clipboard
+        )
+        btn_copy.pack(side="left", padx=5)
+
+        btn_export = tk.Button(
+            btn_bar,
+            text="💾 Export Report",
+            font=("sans-serif", 9),
+            bg="#2c313a",
+            fg=COLOR_TEXT_MAIN,
+            activebackground="#3e4451",
+            activeforeground=COLOR_TEXT_HEAD,
+            relief="flat",
+            padx=12,
+            pady=6,
+            cursor="hand2",
+            command=self.export_report_to_file
+        )
+        btn_export.pack(side="left", padx=5)
+
+        # 2. Metric Cards Banner
+        self.metric_bar = tk.Frame(self, bg=COLOR_BG_DARK, padx=20, pady=12)
+        self.metric_bar.pack(fill="x", side="top")
+
+        self.card_total = self.create_metric_card(self.metric_bar, "TOTAL DEVICES", "0", COLOR_TEXT_HEAD)
+        self.card_healthy = self.create_metric_card(self.metric_bar, "HEALTHY DRIVERS", "0", COLOR_STATUS[DriverStatus.GOOD])
+        self.card_warn = self.create_metric_card(self.metric_bar, "REQUIRES ATTENTION", "0", COLOR_STATUS[DriverStatus.WARNING])
+        self.card_unknown = self.create_metric_card(self.metric_bar, "UNKNOWN / UNSUPPORTED", "0", COLOR_STATUS[DriverStatus.UNKNOWN])
+
+        # 3. Main Split View (Sidebar + Content Area)
+        main_frame = tk.Frame(self, bg=COLOR_BG_DARK)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+
+        # Left Sidebar for Categories
+        sidebar = tk.Frame(main_frame, bg=COLOR_SIDEBAR, width=200)
+        sidebar.pack(side="left", fill="y", padx=(0, 15))
+        sidebar.pack_propagate(False)
+
+        cat_title = tk.Label(
+            sidebar,
+            text="CATEGORIES",
+            font=("sans-serif", 9, "bold"),
+            fg=COLOR_TEXT_MUTED,
+            bg=COLOR_SIDEBAR,
+            pady=10
+        )
+        cat_title.pack(anchor="w", padx=15)
+
+        self.categories = [
+            "All Devices",
+            "Graphics",
+            "Network",
+            "Bluetooth",
+            "Audio",
+            "Storage",
+            "USB",
+            "Input",
+            "Display",
+            "Other Devices"
+        ]
+
+        self.cat_buttons = {}
+        for cat in self.categories:
+            btn = tk.Button(
+                sidebar,
+                text=cat,
+                font=("sans-serif", 9),
+                fg=COLOR_TEXT_MAIN,
+                bg=COLOR_SIDEBAR,
+                activebackground=COLOR_CARD,
+                activeforeground=COLOR_TEXT_HEAD,
+                relief="flat",
+                anchor="w",
+                padx=15,
+                pady=7,
+                cursor="hand2",
+                command=lambda c=cat: self.select_category(c)
+            )
+            btn.pack(fill="x")
+            self.cat_buttons[cat] = btn
+
+        # Right Content Area (Split into Device List on top and Detail Inspector on bottom)
+        content_frame = tk.Frame(main_frame, bg=COLOR_BG_DARK)
+        content_frame.pack(side="left", fill="both", expand=True)
+
+        # Device List Treeview
+        tree_container = tk.Frame(content_frame, bg=COLOR_CARD, bd=1, relief="solid")
+        tree_container.pack(fill="both", expand=True, pady=(0, 15))
+
+        columns = ("status", "category", "name", "driver", "operstate")
+        self.tree = ttk.Treeview(tree_container, columns=columns, show="headings", selectmode="browse")
+        self.tree.heading("status", text="Status")
+        self.tree.heading("category", text="Category")
+        self.tree.heading("name", text="Device Name")
+        self.tree.heading("driver", text="Active Driver / Module")
+        self.tree.heading("operstate", text="Operational State")
+
+        self.tree.column("status", width=95, anchor="center")
+        self.tree.column("category", width=110, anchor="w")
+        self.tree.column("name", width=250, anchor="w")
+        self.tree.column("driver", width=160, anchor="w")
+        self.tree.column("operstate", width=120, anchor="center")
+
+        scrollbar = ttk.Scrollbar(tree_container, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        self.tree.bind("<<TreeviewSelect>>", self.on_device_selected)
+
+        # Bottom Inspector Panel
+        self.inspector_card = tk.Frame(content_frame, bg=COLOR_CARD, padx=15, pady=12, bd=1, relief="solid")
+        self.inspector_card.pack(fill="x", side="bottom")
+
+        self.lbl_inspect_title = tk.Label(
+            self.inspector_card,
+            text="Select a device to view detailed diagnostic telemetry",
+            font=("sans-serif", 11, "bold"),
+            fg=COLOR_TEXT_HEAD,
+            bg=COLOR_CARD
+        )
+        self.lbl_inspect_title.pack(anchor="w", pady=(0, 6))
+
+        # Two-column diagnostic details
+        detail_cols = tk.Frame(self.inspector_card, bg=COLOR_CARD)
+        detail_cols.pack(fill="x", pady=4)
+
+        col_left = tk.Frame(detail_cols, bg=COLOR_CARD)
+        col_left.pack(side="left", fill="both", expand=True)
+
+        col_right = tk.Frame(detail_cols, bg=COLOR_CARD)
+        col_right.pack(side="left", fill="both", expand=True)
+
+        self.lbl_vendor = self.create_inspector_row(col_left, "Vendor / Model:")
+        self.lbl_hwid = self.create_inspector_row(col_left, "Hardware ID:")
+        self.lbl_driver = self.create_inspector_row(col_left, "Kernel Driver:")
+        self.lbl_module = self.create_inspector_row(col_left, "Module Loaded:")
+
+        self.lbl_binding = self.create_inspector_row(col_right, "Driver Binding:")
+        self.lbl_firmware = self.create_inspector_row(col_right, "Firmware Status:")
+        self.lbl_operational = self.create_inspector_row(col_right, "Operational State:")
+        self.lbl_status = self.create_inspector_row(col_right, "Diagnostic Status:")
+
+        # Diagnostic Explanation Box
+        sep = tk.Frame(self.inspector_card, bg=COLOR_CARD_BORDER, height=1)
+        sep.pack(fill="x", pady=8)
+
+        self.lbl_explanation = tk.Label(
+            self.inspector_card,
+            text="Diagnostic Analysis: Waiting for device selection.",
+            font=("sans-serif", 9),
+            fg=COLOR_TEXT_MAIN,
+            bg=COLOR_CARD,
+            wraplength=760,
+            justify="left"
+        )
+        self.lbl_explanation.pack(anchor="w")
+
+        self.lbl_recommendation = tk.Label(
+            self.inspector_card,
+            text="Recommended Action: None",
+            font=("sans-serif", 9, "bold"),
+            fg=COLOR_ACCENT,
+            bg=COLOR_CARD,
+            wraplength=760,
+            justify="left"
+        )
+        self.lbl_recommendation.pack(anchor="w", pady=(4, 0))
+
+        # Status Bar
+        self.status_bar = tk.Label(
+            self,
+            text="Ready",
+            font=("sans-serif", 8),
+            fg=COLOR_TEXT_MUTED,
+            bg=COLOR_BG_DARK,
+            anchor="w",
+            padx=20,
+            pady=4
+        )
+        self.status_bar.pack(fill="x", side="bottom")
+
+    def create_metric_card(self, parent: tk.Frame, title: str, val: str, color: str) -> Dict[str, Any]:
+        """Builds a summary metric badge card."""
+        card = tk.Frame(parent, bg=COLOR_CARD, padx=16, pady=10, bd=1, relief="solid")
+        card.pack(side="left", fill="both", expand=True, padx=5)
+
+        lbl_title = tk.Label(card, text=title, font=("sans-serif", 8, "bold"), fg=COLOR_TEXT_MUTED, bg=COLOR_CARD)
+        lbl_title.pack(anchor="w")
+
+        lbl_val = tk.Label(card, text=val, font=("sans-serif", 16, "bold"), fg=color, bg=COLOR_CARD)
+        lbl_val.pack(anchor="w")
+
+        return {"card": card, "title": lbl_title, "val": lbl_val}
+
+    def create_inspector_row(self, parent: tk.Frame, label_text: str) -> tk.Label:
+        row = tk.Frame(parent, bg=COLOR_CARD)
+        row.pack(fill="x", pady=2)
+
+        lbl_k = tk.Label(row, text=label_text, font=("sans-serif", 9, "bold"), fg=COLOR_TEXT_MUTED, bg=COLOR_CARD, width=16, anchor="w")
+        lbl_k.pack(side="left")
+
+        lbl_v = tk.Label(row, text="N/A", font=("sans-serif", 9), fg=COLOR_TEXT_MAIN, bg=COLOR_CARD, anchor="w")
+        lbl_v.pack(side="left", fill="x", expand=True)
+
+        return lbl_v
+
+    def select_category(self, category: str):
+        """Switches active category filter."""
+        self.selected_category.set(category)
+        for cat, btn in self.cat_buttons.items():
+            if cat == category:
+                btn.configure(bg=COLOR_CARD, fg=COLOR_ACCENT, font=("sans-serif", 9, "bold"))
+            else:
+                btn.configure(bg=COLOR_SIDEBAR, fg=COLOR_TEXT_MAIN, font=("sans-serif", 9))
+        self.populate_device_table()
+
+    def refresh_driver_data(self):
+        """Asynchronously updates driver telemetry without locking the UI."""
+        if self.is_scanning:
+            return
+
+        self.is_scanning = True
+        self.btn_refresh.configure(text="Scanning...", state="disabled")
+        self.status_bar.configure(text="Querying kernel sysfs, loaded modules, and hardware bus endpoints...")
+
+        def worker():
+            try:
+                data = DriverDetector.get_full_driver_report()
+            except Exception as e:
+                data = {"error": str(e)}
+
+            self.after(0, lambda: self.on_refresh_finished(data))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def on_refresh_finished(self, data: Dict[str, Any]):
+        self.is_scanning = False
+        self.btn_refresh.configure(text="↻ Refresh", state="normal")
+
+        if "error" in data:
+            self.status_bar.configure(text=f"Error refreshing hardware: {data['error']}")
+            messagebox.showerror("Scan Error", f"Failed to inspect driver telemetry:\n{data['error']}")
+            return
+
+        self.report_data = data
+        sys_info = data.get("system", {})
+        arch = sys_info.get("architecture", "Unknown")
+        kernel = sys_info.get("kernel", "Unknown")
+        virt = sys_info.get("virtualization", {})
+        apple = sys_info.get("apple_silicon", {})
+
+        env_desc = "Bare-Metal"
+        if virt.get("is_vm"):
+            env_desc = f"Virtual Machine ({virt.get('hypervisor')})"
+        elif apple.get("is_apple_silicon"):
+            env_desc = f"Apple Silicon ({apple.get('model')})"
+
+        self.lbl_subtitle.configure(text=f"Architecture: {arch} • Kernel: {kernel} • Environment: {env_desc}")
+
+        # Update metric cards
+        summary = data.get("summary", {})
+        total = len(data.get("devices", []))
+        good = summary.get(DriverStatus.GOOD, 0)
+        warn = summary.get(DriverStatus.WARNING, 0) + summary.get(DriverStatus.MISSING, 0) + summary.get(DriverStatus.ERROR, 0)
+        unknown = summary.get(DriverStatus.UNKNOWN, 0) + summary.get(DriverStatus.UNSUPPORTED, 0)
+
+        self.card_total["val"].configure(text=str(total))
+        self.card_healthy["val"].configure(text=str(good))
+        self.card_warn["val"].configure(text=str(warn))
+        self.card_unknown["val"].configure(text=str(unknown))
+
+        self.populate_device_table()
+        self.status_bar.configure(text=f"Telemetry refreshed successfully at {sys_info.get('detection_time', '')}.")
+
+    def populate_device_table(self):
+        """Populates the main device treeview based on selected category."""
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        if not self.report_data or "devices" not in self.report_data:
+            return
+
+        cat_filter = self.selected_category.get()
+        dev_list = self.report_data.get("devices", [])
+
+        if cat_filter != "All Devices":
+            cats_dict = self.report_data.get("categories", {})
+            dev_list = cats_dict.get(cat_filter, [])
+
+        for idx, dev in enumerate(dev_list):
+            st = dev.get("status", DriverStatus.UNKNOWN)
+            cat = dev.get("category", "General")
+            name = dev.get("name", "Unknown Device")
+            driver = dev.get("driver", "Unknown")
+            operstate = dev.get("operational_status", "UNKNOWN")
+
+            item_id = self.tree.insert(
+                "",
+                "end",
+                iid=str(idx),
+                values=(st, cat, name, driver, operstate)
+            )
+
+        # Select first item if available
+        children = self.tree.get_children()
+        if children:
+            self.tree.selection_set(children[0])
+            self.tree.focus(children[0])
+            self.display_device_details(dev_list[0])
+        else:
+            self.clear_inspector()
+
+    def on_device_selected(self, event):
+        selected = self.tree.selection()
+        if not selected:
+            return
+
+        idx = int(selected[0])
+        cat_filter = self.selected_category.get()
+        dev_list = self.report_data.get("devices", [])
+        if cat_filter != "All Devices":
+            cats_dict = self.report_data.get("categories", {})
+            dev_list = cats_dict.get(cat_filter, [])
+
+        if 0 <= idx < len(dev_list):
+            self.display_device_details(dev_list[idx])
+
+    def display_device_details(self, dev: Dict[str, Any]):
+        """Renders technical telemetry in the inspector pane."""
+        self.lbl_inspect_title.configure(text=dev.get("name", "Unknown Device"))
+        self.lbl_vendor.configure(text=dev.get("vendor", "Not available"))
+        self.lbl_hwid.configure(text=dev.get("hardware_id", "N/A"))
+        self.lbl_driver.configure(text=dev.get("driver", "Unknown"))
+        self.lbl_module.configure(text=dev.get("module_loaded", "Unknown"))
+
+        is_bound = "Bound & Active" if dev.get("driver_bound") else "Not bound"
+        self.lbl_binding.configure(text=is_bound)
+        self.lbl_firmware.configure(text=dev.get("firmware_status", "Unknown"))
+        self.lbl_operational.configure(text=dev.get("operational_status", "UNKNOWN"))
+
+        st = dev.get("status", DriverStatus.UNKNOWN)
+        st_color = COLOR_STATUS.get(st, COLOR_TEXT_HEAD)
+        self.lbl_status.configure(text=st, fg=st_color, font=("sans-serif", 9, "bold"))
+
+        self.lbl_explanation.configure(text=f"Diagnostic Analysis: {dev.get('explanation', 'None')}")
+        self.lbl_recommendation.configure(text=f"Recommended Action: {dev.get('recommendation', 'None')}")
+
+    def clear_inspector(self):
+        self.lbl_inspect_title.configure(text="No devices found in this category.")
+        self.lbl_vendor.configure(text="N/A")
+        self.lbl_hwid.configure(text="N/A")
+        self.lbl_driver.configure(text="N/A")
+        self.lbl_module.configure(text="N/A")
+        self.lbl_binding.configure(text="N/A")
+        self.lbl_firmware.configure(text="N/A")
+        self.lbl_operational.configure(text="N/A")
+        self.lbl_status.configure(text="N/A", fg=COLOR_TEXT_MAIN)
+        self.lbl_explanation.configure(text="Diagnostic Analysis: No devices available.")
+        self.lbl_recommendation.configure(text="Recommended Action: None")
+
+    def copy_report_to_clipboard(self):
+        """Copies formatted diagnostic report to user's system clipboard."""
+        if not self.report_data:
+            messagebox.showwarning("Copy Report", "No diagnostic data to copy. Please run refresh first.")
+            return
+
+        report_txt = generate_diagnostic_report(self.report_data)
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(report_txt)
+            self.update()  # Persist clipboard content
+            self.status_bar.configure(text="Diagnostic report copied to clipboard.")
+            messagebox.showinfo("Report Copied", "DoomOS Driver Diagnostic Report successfully copied to clipboard!")
+        except Exception as e:
+            self.status_bar.configure(text=f"Clipboard error: {e}")
+            messagebox.showwarning("Clipboard Warning", f"Could not write directly to system clipboard:\n{e}\n\nPlease use 'Export Report' to save to a file.")
+
+    def export_report_to_file(self):
+        """Exports sanitized report to a text file selected by user."""
+        if not self.report_data:
+            messagebox.showwarning("Export Report", "No diagnostic data to export.")
+            return
+
+        report_txt = generate_diagnostic_report(self.report_data)
+        initial_file = "DoomOS-Driver-Report.txt"
+        save_path = filedialog.asksaveasfilename(
+            parent=self,
+            title="Save DoomOS Driver Diagnostic Report",
+            initialfile=initial_file,
+            defaultextension=".txt",
+            filetypes=[("Text Files (*.txt)", "*.txt"), ("All Files (*.*)", "*.*")]
+        )
+
+        if save_path:
+            try:
+                with open(save_path, "w", encoding="utf-8") as f:
+                    f.write(report_txt)
+                self.status_bar.configure(text=f"Report exported to {save_path}")
+                messagebox.showinfo("Report Exported", f"Successfully exported diagnostic report to:\n{save_path}")
+            except Exception as e:
+                self.status_bar.configure(text=f"Export failed: {e}")
+                messagebox.showerror("Export Failed", f"Could not write report file:\n{e}")
+
+
+def main():
+    app = DriverCenterApp()
+    app.mainloop()
+
+
+if __name__ == "__main__":
+    main()

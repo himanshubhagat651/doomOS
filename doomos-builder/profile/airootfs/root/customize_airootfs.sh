@@ -28,6 +28,8 @@ chmod -f +x /usr/bin/doom-game || true
 chmod -f +x /usr/bin/doomos-nvidia-verify || true
 chmod -f +x /usr/bin/doomos-hardware-detect || true
 chmod -f +x /usr/bin/doomos-hardware-center || true
+chmod -f +x /usr/bin/doomos-driver-detect || true
+chmod -f +x /usr/bin/doomos-driver-center || true
 if [[ -f "/etc/calamares/modules/doomos-rtc/main.py" ]]; then
     chmod +x /etc/calamares/modules/doomos-rtc/main.py
 fi
